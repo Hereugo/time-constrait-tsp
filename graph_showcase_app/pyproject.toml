@@ -1,0 +1,12 @@
+[project]
+name = "graph-showcase-app"
+version = "0.1.0"
+description = "Streamlit showcase for weighted graph datasets with node rewards"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "networkx>=3.3",
+    "pandas>=2.2",
+    "pyvis>=0.3.2",
+    "streamlit>=1.45.0",
+]
