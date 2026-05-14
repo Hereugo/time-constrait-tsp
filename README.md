@@ -6,8 +6,9 @@
     - [ ] Genetic Algorithm Approach
     - [ ] Local Search Optimizing Approach
 - [ ] Dataset Generation
-    - [ ] Random Dataset Generator
+    - [x] Random Dataset Generator (i.e. rudy)
     - [ ] TSP Dataset and editting to have the solution be best and fit the problem description
+    - [ ] Real World Dataset (if we can find one that fits the problem description)
     - [ ] Visualizier (receives a graph and a solution and visualizes it)
 - [ ] Run Experiments
     - [ ] Generate datasets / random / TSP-editted 
@@ -28,6 +29,8 @@ The next m lines each contain four integers u, v, w, and r, representing an edge
 ## Output Format
 
 The output should be a two lines containing the maximum total reward with total time taken and the sequence of points to visit in the tour.
+
+NOTE: The points are numbered from 1 to n. The tour should start and end at the same point, which is point 1.
 
 ## Example
 
