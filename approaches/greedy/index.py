@@ -1,6 +1,6 @@
 import argparse
-import os
 import sys
+from pathlib import Path
 
 
 def argument_parser():
@@ -9,7 +9,12 @@ def argument_parser():
         "--input",
         type=str,
         required=True,
-        help="Path to the input file containing the problem instance.",
+        help="Path to an input file or a directory of input files.",
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        help="Path to an output file, or an output directory when --input is a directory.",
     )
     parser.add_argument(
         "--budget",
@@ -173,26 +178,83 @@ def greedy_algorithm(n, rewards, graph, budget, depot=1, verbose=False):
     return total_reward, total_cost, closed_tour
 
 
+def format_solution(total_reward, total_cost, tour):
+    return f"{total_reward} {total_cost}\n{' '.join(map(str, tour))}\n"
+
+
+def solve_instance(input_path, budget, verbose=False):
+    n, _, rewards, graph = read_input(input_path, verbose=verbose)
+    total_reward, total_cost, tour = greedy_algorithm(
+        n,
+        rewards,
+        graph,
+        budget=budget,
+        verbose=verbose,
+    )
+    return format_solution(total_reward, total_cost, tour)
+
+
+def input_files_from_directory(input_dir):
+    files = sorted(
+        path for path in input_dir.iterdir() if path.is_file() and not path.name.startswith(".")
+    )
+    if not files:
+        raise ValueError(f"Input directory {input_dir} does not contain any files.")
+    return files
+
+
+def output_file_for_single_input(input_path, output_path):
+    if output_path.exists() and output_path.is_dir():
+        return output_path / input_path.name
+    return output_path
+
+
+def validate_directory_output(output_path):
+    if output_path.exists() and not output_path.is_dir():
+        raise ValueError(
+            f"Output path {output_path} must be a directory when the input is a directory."
+        )
+    output_path.mkdir(parents=True, exist_ok=True)
+
+
 if __name__ == "__main__":
     parser = argument_parser()
     args = parser.parse_args()
 
-    if not os.path.exists(args.input):
-        print(f"Input file {args.input} does not exist.", file=sys.stderr)
+    input_path = Path(args.input)
+    output_path = Path(args.output) if args.output else None
+
+    if not input_path.exists():
+        print(f"Input path {input_path} does not exist.", file=sys.stderr)
         raise SystemExit(1)
 
     try:
-        n, _, rewards, graph = read_input(args.input, verbose=args.verbose)
-        total_reward, total_cost, tour = greedy_algorithm(
-            n,
-            rewards,
-            graph,
-            budget=args.budget,
-            verbose=args.verbose,
-        )
+        if input_path.is_dir():
+            if output_path is None:
+                raise ValueError("--output is required when --input is a directory.")
+
+            validate_directory_output(output_path)
+
+            for instance_path in input_files_from_directory(input_path):
+                solution = solve_instance(
+                    instance_path,
+                    budget=args.budget,
+                    verbose=args.verbose,
+                )
+                (output_path / instance_path.name).write_text(solution, encoding="utf-8")
+        else:
+            solution = solve_instance(
+                input_path,
+                budget=args.budget,
+                verbose=args.verbose,
+            )
+
+            if output_path is None:
+                sys.stdout.write(solution)
+            else:
+                destination = output_file_for_single_input(input_path, output_path)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_text(solution, encoding="utf-8")
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         raise SystemExit(1) from exc
-
-    print(f"{total_reward} {total_cost}")
-    print(" ".join(map(str, tour)))
