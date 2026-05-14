@@ -23,8 +23,9 @@
 
 ## Input Format
 
-The first line of the input contains three integers n, m, and t. 
-The next m lines each contain four integers u, v, w, and r, representing an edge from point u to point v with a time cost of w and a reward of r.
+The first line of the input contains two integers n and m.
+The second line contains n integers r1, r2, ..., rn, where ri is the reward value associated with point i.
+The next m lines each contain three integers u, v, and w, representing an edge from point u to point v with a time cost of w.
 
 ## Output Format
 
@@ -36,10 +37,11 @@ NOTE: The points are numbered from 1 to n. The tour should start and end at the 
 
 input.txt
 ```
-n m t
-u1 v1 w1 r1
-...           // m lines of edges
-un vn wn rn
+n m
+r1 r2 ... rn
+u1 v1 w1
+...
+um vm wm
 ```
 
 output.txt

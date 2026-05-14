@@ -9,11 +9,12 @@ Usage:
 
 Generates graph instance files by:
 1. calling Rudy to create the graph topology and weights
-2. attaching a seeded random reward as a fourth column on each edge
+2. generating a seeded random reward for each node
 
 Output format:
   n m
-  u v w r
+  r1 r2 r3 ... rn
+  u v w
   ...
 
 Options:
@@ -230,6 +231,13 @@ for ((sample_idx = 1; sample_idx <= samples; sample_idx++)); do
         n = $1
         m = $2
         print n, m
+        for (i = 1; i <= n; i++) {
+          rewards[i] = random_reward()
+        }
+        for (i = 1; i <= n; i++) {
+          printf "%s%d", (i == 1 ? "" : " "), rewards[i]
+        }
+        printf "\n"
         next
       }
 
@@ -237,8 +245,7 @@ for ((sample_idx = 1; sample_idx <= samples; sample_idx++)); do
         u = $1
         v = $2
         w = $3
-        r = random_reward()
-        print u, v, w, r
+        print u, v, w
       }
     ' > "$output_file"
 

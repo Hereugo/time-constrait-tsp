@@ -6,22 +6,23 @@ It generates one or more graph instance files by:
 
 1. running Rudy with the graph expression you provide
 2. keeping Rudy's original edge weights
-3. appending a random reward value to each edge
+3. generating one random reward value for each node
 
 Each generated file has the format:
 
 ```text
 n m
-u v w r
-u v w r
+r1 r2 r3 ... rn
+u v w
+u v w
 ...
 ```
 
 - `n`: number of vertices
 - `m`: number of edges
+- `r1 ... rn`: reward for each node, in node order
 - `u v`: edge endpoints
 - `w`: edge weight produced by Rudy
-- `r`: random reward added by `generate.sh`
 
 ## Basic Usage
 
@@ -50,7 +51,7 @@ Generate 5 planar graphs and store them in a custom folder:
 ./generators/generate.sh -n 5 -o generators/my_graphs -- -planar 30 50 1
 ```
 
-Generate graphs with rewards in the range `[10, 25]`:
+Generate graphs with node rewards in the range `[10, 25]`:
 
 ```bash
 ./generators/generate.sh -n 4 --reward-min 10 --reward-max 25 -- -planar 20 35 1
@@ -110,7 +111,7 @@ All of these are valid:
 
 ## Reward Seeds
 
-Rewards are deterministic for a fixed reward seed base.
+Node rewards are deterministic for a fixed reward seed base.
 
 If you run:
 
@@ -127,5 +128,5 @@ then the reward seeds used are:
 ## Notes
 
 - If `generators/rudy/rudy` does not exist yet, the script tries to compile it automatically.
-- If you do not use `__SEED__` in the Rudy expression, every sample will use the same Rudy graph structure and only the reward values will vary.
+- If you do not use `__SEED__` in the Rudy expression, every sample will use the same Rudy graph structure and only the node rewards will vary.
 - `reward-min` must be less than or equal to `reward-max`.
