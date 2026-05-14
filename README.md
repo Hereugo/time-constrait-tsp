@@ -9,7 +9,7 @@
     - [x] Random Dataset Generator (i.e. rudy)
     - [ ] TSP Dataset and editting to have the solution be best and fit the problem description
     - [ ] Real World Dataset (if we can find one that fits the problem description)
-    - [ ] Visualizier (receives a graph and a solution and visualizes it)
+    - [x] Visualizier (~receives a graph~ and a solution and visualizes it)
 - [ ] Run Experiments
     - [ ] Generate datasets / random / TSP-editted 
     - [ ] Run the algorithms on the datasets and compare results
