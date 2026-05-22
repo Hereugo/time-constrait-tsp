@@ -1,4 +1,6 @@
 import argparse
+from collections import Counter
+from heapq import heappop, heappush
 import sys
 from pathlib import Path
 
@@ -75,19 +77,122 @@ def edge_weight(graph, source, target):
     return graph.get(source, {}).get(target)
 
 
-def insertion_score(reward, additional_cost):
+def insertion_score(reward_gain, additional_cost):
     if additional_cost <= 0:
         return float("inf")
-    return reward / additional_cost
+    return reward_gain / additional_cost
 
 
-def candidate_priority(node_reward, additional_cost, node):
+def candidate_priority(reward_gain, additional_cost, node):
     return (
-        insertion_score(node_reward, additional_cost),
-        node_reward,
+        insertion_score(reward_gain, additional_cost),
+        reward_gain,
         -additional_cost,
         -node,
     )
+
+
+def dijkstra_shortest_paths(graph, source):
+    distances = {node: float("inf") for node in graph}
+    predecessors = {source: None}
+    distances[source] = 0
+    queue = [(0, source)]
+
+    while queue:
+        current_distance, node = heappop(queue)
+        if current_distance != distances[node]:
+            continue
+
+        for neighbor, weight in sorted(graph[node].items()):
+            next_distance = current_distance + weight
+            if next_distance < distances[neighbor]:
+                distances[neighbor] = next_distance
+                predecessors[neighbor] = node
+                heappush(queue, (next_distance, neighbor))
+
+    paths = {}
+    for target, distance in distances.items():
+        if distance == float("inf"):
+            continue
+
+        path = []
+        current = target
+        while current is not None:
+            path.append(current)
+            current = predecessors.get(current)
+
+        paths[target] = list(reversed(path))
+
+    return distances, paths
+
+
+def build_shortest_path_index(graph):
+    distances = {}
+    paths = {}
+    counters = {}
+
+    for source in graph:
+        source_distances, source_paths = dijkstra_shortest_paths(graph, source)
+        distances[source] = source_distances
+        paths[source] = source_paths
+        counters[source] = {
+            target: Counter(path_nodes) for target, path_nodes in source_paths.items()
+        }
+
+    return distances, paths, counters
+
+
+def cycle_segments(tour):
+    return [(tour[index], tour[(index + 1) % len(tour)]) for index in range(len(tour))]
+
+
+def expanded_walk(tour, paths):
+    walk = []
+    for index, (source, target) in enumerate(cycle_segments(tour)):
+        segment = paths[source][target]
+        if index:
+            segment = segment[1:]
+        walk.extend(segment)
+    return walk
+
+
+def walk_cost(walk, graph):
+    return sum(edge_weight(graph, walk[index], walk[index + 1]) for index in range(len(walk) - 1))
+
+
+def walk_reward(walk, rewards, depot):
+    visited = set(walk)
+    visited.discard(depot)
+    return sum(rewards[node - 1] for node in visited)
+
+
+def tour_node_counts(tour, path_counters):
+    node_counts = Counter()
+    for source, target in cycle_segments(tour):
+        node_counts.update(path_counters[source][target])
+    return node_counts
+
+
+def collected_reward(node_counts, rewards, depot):
+    return sum(
+        rewards[node - 1]
+        for node, count in node_counts.items()
+        if node != depot and count > 0
+    )
+
+
+def replace_segment_counts(node_counts, old_counter, new_counters):
+    updated_counts = node_counts.copy()
+    updated_counts.subtract(old_counter)
+
+    for counter in new_counters:
+        updated_counts.update(counter)
+
+    for node in list(updated_counts):
+        if updated_counts[node] <= 0:
+            del updated_counts[node]
+
+    return updated_counts
 
 
 def greedy_algorithm(n, rewards, graph, budget, depot=1, verbose=False):
@@ -96,86 +201,97 @@ def greedy_algorithm(n, rewards, graph, budget, depot=1, verbose=False):
     if budget < 0:
         raise ValueError("Budget must be non-negative.")
 
+    distances, paths, path_counters = build_shortest_path_index(graph)
     tour = [depot]
-    visited = {depot}
+    node_counts = tour_node_counts(tour, path_counters)
     total_cost = 0
-    total_reward = 0
+    total_reward = collected_reward(node_counts, rewards, depot)
     iteration = 0
 
     while True:
         best_candidate = None
 
         for node in range(1, n + 1):
-            if node in visited:
+            if node in tour:
                 continue
 
-            node_reward = rewards[node - 1]
-            best_position = None
-            best_additional_cost = None
+            for index, (left, right) in enumerate(cycle_segments(tour)):
+                left_to_node = distances[left].get(node, float("inf"))
+                node_to_right = distances[node].get(right, float("inf"))
+                current_segment_cost = distances[left].get(right, float("inf"))
 
-            for index in range(len(tour)):
-                left = tour[index]
-                right = tour[(index + 1) % len(tour)]
-
-                left_to_node = edge_weight(graph, left, node)
-                node_to_right = edge_weight(graph, node, right)
-                if left_to_node is None or node_to_right is None:
+                if float("inf") in (left_to_node, node_to_right, current_segment_cost):
                     continue
 
-                current_edge_cost = edge_weight(graph, left, right)
-                if current_edge_cost is None:
+                additional_cost = left_to_node + node_to_right - current_segment_cost
+                new_total_cost = total_cost + additional_cost
+                if new_total_cost > budget:
                     continue
 
-                additional_cost = left_to_node + node_to_right - current_edge_cost
-                if best_additional_cost is None or additional_cost < best_additional_cost:
-                    best_additional_cost = additional_cost
-                    best_position = index + 1
+                updated_counts = replace_segment_counts(
+                    node_counts=node_counts,
+                    old_counter=path_counters[left][right],
+                    new_counters=(
+                        path_counters[left][node],
+                        path_counters[node][right],
+                    ),
+                )
+                new_total_reward = collected_reward(updated_counts, rewards, depot)
+                reward_gain = new_total_reward - total_reward
+                if reward_gain <= 0:
+                    continue
 
-            if best_position is None or best_additional_cost is None:
-                continue
-
-            new_total_cost = total_cost + best_additional_cost
-            if new_total_cost > budget:
-                continue
-
-            candidate = {
-                "priority": candidate_priority(
-                    node_reward=node_reward,
-                    additional_cost=best_additional_cost,
-                    node=node,
-                ),
-                "node": node,
-                "position": best_position,
-                "additional_cost": best_additional_cost,
-                "reward": node_reward,
-            }
-            if best_candidate is None or candidate["priority"] > best_candidate["priority"]:
-                best_candidate = candidate
+                candidate = {
+                    "priority": candidate_priority(
+                        reward_gain=reward_gain,
+                        additional_cost=additional_cost,
+                        node=node,
+                    ),
+                    "node": node,
+                    "position": index + 1,
+                    "additional_cost": additional_cost,
+                    "reward_gain": reward_gain,
+                    "node_counts": updated_counts,
+                    "total_cost": new_total_cost,
+                    "total_reward": new_total_reward,
+                }
+                if best_candidate is None or candidate["priority"] > best_candidate["priority"]:
+                    best_candidate = candidate
 
         if best_candidate is None:
             break
 
         node = best_candidate["node"]
         position = best_candidate["position"]
-        additional_cost = best_candidate["additional_cost"]
-        node_reward = best_candidate["reward"]
-
         tour.insert(position, node)
-        visited.add(node)
-        total_cost += additional_cost
-        total_reward += node_reward
+        node_counts = best_candidate["node_counts"]
+        total_cost = best_candidate["total_cost"]
+        total_reward = best_candidate["total_reward"]
         iteration += 1
 
         if verbose:
             print(
                 "Iteration "
                 f"{iteration}: inserted node {node} at position {position}, "
-                f"additional cost {additional_cost}, total cost {total_cost}, "
-                f"total reward {total_reward}"
+                f"additional cost {best_candidate['additional_cost']}, "
+                f"reward gain {best_candidate['reward_gain']}, "
+                f"total cost {total_cost}, total reward {total_reward}"
             )
 
-    closed_tour = tour + [depot]
-    return total_reward, total_cost, closed_tour
+    walk = expanded_walk(tour, paths)
+    validated_cost = walk_cost(walk, graph)
+    validated_reward = walk_reward(walk, rewards, depot)
+
+    if validated_cost != total_cost:
+        raise ValueError(
+            f"Internal error: computed cost {total_cost} does not match walk cost {validated_cost}."
+        )
+    if validated_reward != total_reward:
+        raise ValueError(
+            f"Internal error: computed reward {total_reward} does not match walk reward {validated_reward}."
+        )
+
+    return total_reward, total_cost, walk
 
 
 def format_solution(total_reward, total_cost, tour):

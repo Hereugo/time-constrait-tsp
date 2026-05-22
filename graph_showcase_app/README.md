@@ -11,12 +11,14 @@ It highlights the two special parts of your instances:
 
 - browse dataset collections such as `planar_weighted_small`
 - pick any graph instance file
+- choose which result directory under `results/` to compare against
 - explore the graph interactively with drag, zoom, hover, and spring physics
 - tune the physics solver, repulsion, spring length, and damping
 - visualize node rewards with color and size
+- load the matching solution from the selected result directory and overlay the chosen tour
 - show edge weights directly on the graph
 - inspect reward and edge tables
-- view the raw dataset file inside the app
+- view the raw dataset and raw solution files inside the app
 
 ## Run it
 
@@ -35,6 +37,8 @@ Then open the local URL printed by Streamlit in your browser.
   - first line: `n m`
   - second line: `n` node rewards
   - remaining `m` lines: `u v w`
+- matching solutions are resolved by filename inside the selected result directory, for example `results/planar_weighted_small_20/graph_094.txt`
+- result directory names can encode parameter settings such as budgets or solver variants
 - the dataset files do not store original coordinates, so the app uses an interactive browser physics layout instead of fixed positions
 - node `1` is highlighted because the problem statement uses it as the tour's start/end node
 - dependencies are now tracked by `uv` in `pyproject.toml` and `uv.lock`
