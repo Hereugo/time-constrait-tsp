@@ -32,6 +32,18 @@ _Avoid_: Exact solver, approximation algorithm
 A population-based heuristic that searches over candidate tour-building priorities and evaluates the feasible tours produced from them.
 _Avoid_: Exact solver, standard TSP genetic algorithm
 
+**Result Set**:
+A collection of solutions produced by one approach under one experimental setup, including dataset collection, travel budget, algorithm parameters, and seed when applicable.
+_Avoid_: Approach when referring to a concrete run, result directory
+
+**Best-of-N Seed Summary**:
+A comparison summary for a stochastic approach that uses the strongest result among N seeded result sets for each comparable instance.
+_Avoid_: Expected single-run performance, average run
+
+**Best-Known Reward**:
+The highest valid reward found among comparable result sets for the same instance and travel budget when no optimal reward is available.
+_Avoid_: Optimum, exact reward
+
 ## Example Dialogue
 
 Developer: Does the greedy baseline collect the reward of the depot?
