@@ -5,15 +5,19 @@ This context describes the routing language used in the thesis and implementatio
 ## Language
 
 **Time-Constrained Traveling Salesman Problem (TTSP)**:
-A routing problem where a route starts and ends at a depot, visits reward-bearing nodes, and must stay within a fixed travel budget while maximizing collected reward.
-_Avoid_: Refueling variant, standard TSP
+A routing problem on an edge-weighted graph where a tour starts and ends at a depot, visits reward-bearing nodes, and must stay within a fixed travel budget while maximizing collected reward.
+_Avoid_: Refueling variant, standard TSP, assuming a complete graph unless explicitly stated
+
+**Edge Weight**:
+The travel cost assigned to an edge in the graph and counted toward the tour's travel budget.
+_Avoid_: Vertex reward, profit
 
 **Depot**:
 The fixed start and end point of every route.
 _Avoid_: Start node, home node
 
 **Reward**:
-The value associated with visiting a node, collected at most once per route.
+The value associated with visiting a non-depot node, possibly zero, collected at most once per route.
 _Avoid_: Profit, prize, value
 
 **Travel Budget**:
