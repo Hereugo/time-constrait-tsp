@@ -43,3 +43,13 @@ Then open the local URL printed by Streamlit in your browser.
 - node `1` is highlighted because the problem statement uses it as the tour's start/end node
 - dependencies are now tracked by `uv` in `pyproject.toml` and `uv.lock`
 - `requirements.txt` is still present as the original source list, but `uv sync` is the main setup path now
+
+## Comparing GA Batches
+
+Generate several GA result directories from the repository root:
+
+```bash
+python3 approaches/genetic/run_batches.py --input datasets/custom --budget 22 --seeds 1 2 3 --generations 100 --population-size 50
+```
+
+The runner writes normal solution files under `results/` and GA metadata under `results_metadata/genetic/`. Result directory names start with the dataset collection name, so the app lists them for that collection. Open the `Run comparison` tab to compare reward, cost, route hops, and validation status for the currently selected graph.

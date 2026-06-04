@@ -1,9 +1,12 @@
-scenario_id,collection,budget,reference_type,approach_id,approach_label,compared_instances,mean_reward,mean_reward_ratio,median_reward_ratio,win_count,mean_cost,mean_budget_utilization,mean_runtime_seconds
-planar_weighted_large_budget100,planar_weighted_large,100,best_known,ga_best_of_n,Genetic Algorithm Best-of-1,100,2423.82,1.0,1.0,20,99.6,0.996,67.70711671454366
-planar_weighted_large_budget100,planar_weighted_large,100,best_known,greedy,Greedy Baseline,100,2416.72,0.9970921292433528,1.0,80,99.55,0.9954999999999999,
-planar_weighted_medium_budget100,planar_weighted_medium,100,best_known,ga_best_of_n,Genetic Algorithm Best-of-3,100,1630.38,1.0,1.0,84,99.66,0.9965999999999999,6.9194993575243275
-planar_weighted_medium_budget100,planar_weighted_medium,100,best_known,greedy,Greedy Baseline,100,1596.25,0.9790236163085585,0.9848247675358803,16,99.25,0.9925000000000002,
-planar_weighted_small_budget030,planar_weighted_small,30,optimum,ga_best_of_n,Genetic Algorithm Best-of-3,100,158.69,1.0,1.0,7,26.56,0.8853333333333333,0.421891774169635
-planar_weighted_small_budget030,planar_weighted_small,30,optimum,greedy,Greedy Baseline,100,157.45,0.9911919051497157,1.0,93,26.28,0.8759999999999999,
-planar_weighted_small_budget100,planar_weighted_small,100,optimum,ga_best_of_n,Genetic Algorithm Best-of-3,100,407.58,1.0,1.0,0,100.0,1.0,0.5917602678551339
-planar_weighted_small_budget100,planar_weighted_small,100,optimum,greedy,Greedy Baseline,100,407.58,1.0,1.0,100,100.0,1.0,
+scenario_id,collection,budget,reference_type,approach_id,approach_label,compared_instances,mean_reward,mean_explicit_reward,mean_reward_ratio,median_reward_ratio,win_count,mean_cost,mean_budget_utilization,mean_runtime_seconds
+planar_weighted_large_budget100,planar_weighted_large,100,best_known,ga_best_of_n,Genetic Algorithm Best-of-1,100,2423.82,,1.0,1.0,20,99.6,0.996,67.70711671454366
+planar_weighted_large_budget100,planar_weighted_large,100,best_known,greedy,Greedy Baseline,100,2416.72,,0.9970921292433528,1.0,80,99.55,0.9954999999999999,
+planar_weighted_medium_budget100,planar_weighted_medium,100,best_known,ga_best_of_n,Genetic Algorithm Best-of-3,100,1630.38,,0.998668288280205,1.0,75,99.66,0.9965999999999999,6.9194993575243275
+planar_weighted_medium_budget100,planar_weighted_medium,100,best_known,greedy,Greedy Baseline,100,1596.25,,0.9777148244987796,0.9827609975269008,15,99.25,0.9925000000000002,
+planar_weighted_medium_budget100,planar_weighted_medium,100,best_known,jsprit_best_of_n,Jsprit Heuristic Best-of-3,100,1592.37,1592.37,0.975394069041581,0.9787370326764522,10,99.37,0.9937,4.76371649
+planar_weighted_small_budget030,planar_weighted_small,30,optimum,ga_best_of_n,Genetic Algorithm Best-of-3,100,158.69,,1.0,1.0,0,26.56,0.8853333333333333,0.421891774169635
+planar_weighted_small_budget030,planar_weighted_small,30,optimum,greedy,Greedy Baseline,100,157.45,,0.9911919051497157,1.0,0,26.28,0.8759999999999999,
+planar_weighted_small_budget030,planar_weighted_small,30,optimum,jsprit_best_of_n,Jsprit Heuristic Best-of-3,100,158.69,158.69,1.0,1.0,100,26.56,0.8853333333333333,0.060562429999999993
+planar_weighted_small_budget100,planar_weighted_small,100,optimum,ga_best_of_n,Genetic Algorithm Best-of-3,100,407.58,,1.0,1.0,0,100.0,1.0,0.5917602678551339
+planar_weighted_small_budget100,planar_weighted_small,100,optimum,greedy,Greedy Baseline,100,407.58,,1.0,1.0,0,100.0,1.0,
+planar_weighted_small_budget100,planar_weighted_small,100,optimum,jsprit_best_of_n,Jsprit Heuristic Best-of-3,100,407.58,407.58,1.0,1.0,100,100.0,1.0,0.08978391999999999

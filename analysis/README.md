@@ -13,10 +13,10 @@ The script reads `analysis/result_sets.csv`, validates stored tours against `dat
 ## Outputs
 
 - `raw_validated_results.csv`: every included result file with validation fields.
-- `per_instance_comparison.csv`: complete-case comparison rows for greedy and GA best-of-N summaries.
+- `per_instance_comparison.csv`: complete-case comparison rows for greedy, GA best-of-N summaries, and Jsprit Heuristic best-of-N summaries when included.
 - `aggregate_summary.csv`: scenario-level aggregate comparison.
 - `aggregate_summary.md`: Markdown table for quick review.
 - `aggregate_summary.tex`: LaTeX table for the thesis.
 - `plots/`: generated reward-ratio comparison plots.
 
-The Small-Instance Exact Solver is used as an optimum reference where available. Otherwise, reward ratios use the best-known reward among comparable valid result sets.
+The Small-Instance Exact Solver is used as an optimum reference where available. Otherwise, reward ratios use the best-known reward among comparable valid result sets. Jsprit metadata can include `explicit_reward`; validated TTSP reward remains the primary reward for ratios, winners, and aggregate summaries.

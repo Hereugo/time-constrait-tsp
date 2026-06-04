@@ -20,13 +20,21 @@ _Avoid_: Start node, home node
 The value associated with visiting a non-depot node, possibly zero, collected at most once per route.
 _Avoid_: Profit, prize, value
 
+**Reward-Bearing Node**:
+A non-depot node with positive reward.
+_Avoid_: Required node, customer
+
 **Travel Budget**:
 The maximum total travel cost allowed for a route.
 _Avoid_: Fuel capacity, time limit when discussing the implemented non-refueling problem
 
 **Tour**:
-A depot-starting, depot-ending route used to collect rewards within the travel budget. In this project language, a tour may traverse graph nodes as part of shortest-path connections between selected nodes.
-_Avoid_: Simple cycle when repeated vertices are possible
+A depot-starting, depot-ending route used to collect rewards within the travel budget. A tour may revisit nodes or edges; each non-depot reward is still collected at most once.
+_Avoid_: Simple cycle, path, selected-node sequence
+
+**Shortest-Path-Expanded Tour**:
+A tour represented by selected nodes, where each consecutive selected-node pair is expanded using a shortest path in the original graph, and intermediate nodes collect reward at most once.
+_Avoid_: Unrestricted graph walk, simple TSP cycle
 
 **Greedy Baseline**:
 A constructive heuristic used as the first comparison point for more advanced heuristics.
@@ -35,6 +43,18 @@ _Avoid_: Exact solver, approximation algorithm
 **Genetic Algorithm**:
 A population-based heuristic that searches over candidate tour-building priorities and evaluates the feasible tours produced from them.
 _Avoid_: Exact solver, standard TSP genetic algorithm
+
+**Jsprit Heuristic**:
+A reward-primary heuristic that uses jsprit to search over explicitly visited reward-bearing nodes, then reports a validated shortest-path-expanded tour under the TTSP rules.
+_Avoid_: Jsprit Solver, exact TTSP solver
+
+**Small-Instance Exact Solver**:
+An exact comparison method used on small TTSP instances to compute the optimal reward and assess heuristic solution quality.
+_Avoid_: Scalable solver, main heuristic, literature baseline
+
+**Instance Size Class**:
+A named dataset group used to compare TTSP behavior at different graph sizes, such as small, medium, and large.
+_Avoid_: Difficulty level when referring only to graph size
 
 **Result Set**:
 A collection of solutions produced by one approach under one experimental setup, including dataset collection, travel budget, algorithm parameters, and seed when applicable.
