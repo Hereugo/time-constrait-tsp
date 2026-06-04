@@ -5,15 +5,19 @@ This context describes the routing language used in the thesis and implementatio
 ## Language
 
 **Time-Constrained Traveling Salesman Problem (TTSP)**:
-A routing problem where a route starts and ends at a depot, visits reward-bearing nodes, and must stay within a fixed travel budget while maximizing collected reward.
-_Avoid_: Refueling variant, standard TSP
+A routing problem on an edge-weighted graph where a tour starts and ends at a depot, visits reward-bearing nodes, and must stay within a fixed travel budget while maximizing collected reward.
+_Avoid_: Refueling variant, standard TSP, assuming a complete graph unless explicitly stated
+
+**Edge Weight**:
+The travel cost assigned to an edge in the graph and counted toward the tour's travel budget.
+_Avoid_: Vertex reward, profit
 
 **Depot**:
 The fixed start and end point of every route.
 _Avoid_: Start node, home node
 
 **Reward**:
-The value associated with visiting a node, collected at most once per route.
+The value associated with visiting a non-depot node, possibly zero, collected at most once per route.
 _Avoid_: Profit, prize, value
 
 **Travel Budget**:
@@ -31,6 +35,18 @@ _Avoid_: Exact solver, approximation algorithm
 **Genetic Algorithm**:
 A population-based heuristic that searches over candidate tour-building priorities and evaluates the feasible tours produced from them.
 _Avoid_: Exact solver, standard TSP genetic algorithm
+
+**Result Set**:
+A collection of solutions produced by one approach under one experimental setup, including dataset collection, travel budget, algorithm parameters, and seed when applicable.
+_Avoid_: Approach when referring to a concrete run, result directory
+
+**Best-of-N Seed Summary**:
+A comparison summary for a stochastic approach that uses the strongest result among N seeded result sets for each comparable instance.
+_Avoid_: Expected single-run performance, average run
+
+**Best-Known Reward**:
+The highest valid reward found among comparable result sets for the same instance and travel budget when no optimal reward is available.
+_Avoid_: Optimum, exact reward
 
 ## Example Dialogue
 
