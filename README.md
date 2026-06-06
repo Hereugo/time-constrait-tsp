@@ -1,41 +1,53 @@
-# Time Constraited Traveling Salesman Problem
+# Time-Constrained Traveling Salesman Problem
 
 - [x] Problem Description (Overlay / Conditions that we work in)
 - [ ] Solutions:
-    - [x] Greedy Approach
-    - [ ] Genetic Algorithm Approach
-    - [ ] Local Search Optimizing Approach
+  - [x] Greedy Approach
+  - [x] Genetic Algorithm Approach
+  - [x] Small-Instance Exact Solver
+  - [x] Jsprit Heuristic
+- [x] Compare Results
+  - [x] Validate stored tours against datasets
+  - [x] Compare greedy and genetic result sets
+  - [x] Use exact results as a small-instance reference
 - [ ] Dataset Generation
-    - [x] Random Dataset Generator (i.e. rudy)
-    - [ ] TSP Dataset and editting to have the solution be best and fit the problem description
-    - [ ] Real World Dataset (if we can find one that fits the problem description)
-    - [x] Visualizier (~receives a graph~ and a solution and visualizes it)
+  - [x] Random Dataset Generator (i.e. rudy)
+  - [ ] TSP Dataset and editting to have the solution be best and fit the problem description
+  - [ ] Real World Dataset (if we can find one that fits the problem description)
+  - [x] Visualizier (~receives a graph~ and a solution and visualizes it)
 - [ ] Run Experiments
-    - [ ] Generate datasets / random / TSP-editted 
-    - [ ] Run the algorithms on the datasets and compare results
+  - [ ] Generate datasets / random / TSP-editted
+  - [ ] Run the algorithms on the datasets and compare results
 - [ ] Conclusion
+
+## Current Mission
+
+This project studies the Time-Constrained Traveling Salesman Problem (TTSP) on sparse weighted graphs. A tour starts and ends at the depot, collects each non-depot reward at most once, and must stay within a fixed travel budget.
+
+The implemented scope compares a fast Greedy Baseline, a Genetic Algorithm, and a Jsprit Heuristic. A Small-Instance Exact Solver is used only as a reference for small instances, where it provides optimal rewards for evaluating heuristic quality. Local search is no longer part of the project scope.
 
 ## Problem Description
 
 - A set of points
-- Each point has a reward value associated with it.
-- Given a time constraint, find a tour (a sequence of points to visit) that maximizes the total reward collected while ensuring that the total time taken does not exceed the given time constraint.
+- Each non-depot point has a reward associated with it.
+- Given a travel budget, find a depot-starting, depot-ending tour that maximizes collected reward while ensuring that the total travel cost does not exceed the budget.
 
 ## Input Format
 
 The first line of the input contains two integers n and m.
-The second line contains n integers r1, r2, ..., rn, where ri is the reward value associated with point i.
+The second line contains n integers r1, r2, ..., rn, where ri is the reward associated with point i.
 The next m lines each contain three integers u, v, and w, representing an edge from point u to point v with a time cost of w.
 
 ## Output Format
 
-The output should be a two lines containing the maximum total reward with total time taken and the sequence of points to visit in the tour.
+The output should be two lines containing the total collected reward with total travel cost and the sequence of points in the tour.
 
 NOTE: The points are numbered from 1 to n. The tour should start and end at the same point, which is point 1.
 
 ## Example
 
 input.txt
+
 ```
 n m
 r1 r2 ... rn
@@ -45,8 +57,9 @@ um vm wm
 ```
 
 output.txt
+
 ```
-max_reward total_time
+total_reward total_cost
 p1 p2 ... pk
 ```
 
@@ -62,7 +75,7 @@ The implementation first reads the graph, rewards, and budget. After that it run
 
 1. The shortest distance between them.
 2. The actual shortest path as a list of vertices.
-3. A `Counter` describing which vertices appear on that path. 
+3. A `Counter` describing which vertices appear on that path.
 
 This preprocessing is important because the graph is not assumed to be complete. When the greedy algorithm connects two nodes in the tour, it really connects them through their shortest path in the original graph.
 
@@ -80,7 +93,7 @@ Once cost and reward are known, the candidate is scored by:
 
 `reward_gain / additional_cost`
 
-This is the greedy part of the algorithm. Among all feasible insertions, it picks the one with the highest value-to-cost ratio. If two candidates have the same ratio, `candidate_priority()` breaks ties by preferring:
+This is the greedy part of the algorithm. Among all feasible insertions, it picks the one with the highest reward-to-cost ratio. If two candidates have the same ratio, `candidate_priority()` breaks ties by preferring:
 
 1. Higher reward gain.
 2. Lower additional cost.
@@ -94,6 +107,36 @@ In short, the greedy solution is an insertion heuristic:
 
 1. Precompute shortest paths.
 2. Start from the depot.
-3. Try every possible profitable insertion.
+3. Try every possible positive-reward insertion.
 4. Choose the best reward-per-cost insertion.
 5. Stop when no feasible positive-gain insertion remains.
+
+## Jsprit Heuristic
+
+The jsprit solver in `approaches/jsprit` is a Java 21 Maven project that builds a reward-primary TTSP heuristic using `jsprit-core`. It models each non-depot reward-bearing node as an optional service, uses shortest-path distances as travel times/costs, and enforces the travel budget as the vehicle latest arrival time.
+
+The internal jsprit objective optimizes explicitly visited reward-bearing nodes first and travel cost second. The reported solution is still expanded through shortest paths and validated under the same TTSP rules as greedy and GA, so intermediate nodes on expanded segments contribute to the reported reward. Per-instance metadata records both `explicit_reward` and `validated_reward`.
+
+Build:
+
+```sh
+mvn -f approaches/jsprit/pom.xml package
+```
+
+Run one file:
+
+```sh
+java -jar approaches/jsprit/target/jsprit-heuristic.jar --input datasets/custom/graph_001.txt --budget 30 --seed 1 --iterations 2000
+```
+
+Run a dataset collection:
+
+```sh
+java -jar approaches/jsprit/target/jsprit-heuristic.jar \
+  --input datasets/planar_weighted_small \
+  --output results/planar_weighted_small_jsprit_budget030_seed001_i2000 \
+  --metadata-output results_metadata/jsprit/planar_weighted_small_jsprit_budget030_seed001_i2000 \
+  --budget 30 \
+  --seed 1 \
+  --iterations 2000
+```

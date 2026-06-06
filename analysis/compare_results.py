@@ -10,7 +10,10 @@ import pandas as pd
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = REPO_ROOT / "analysis" / "result_sets.csv"
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "analysis" / "output"
-GA_BEST_LABEL = "Genetic Algorithm Best-of-{seed_count}"
+STOCHASTIC_SUMMARY_LABELS = {
+    "ga": "Genetic Algorithm Best-of-{seed_count}",
+    "jsprit": "Jsprit Heuristic Best-of-{seed_count}",
+}
 
 
 @dataclass(frozen=True)
@@ -168,6 +171,8 @@ def raw_rows(manifest_rows: list[dict], datasets_root: Path, results_root: Path,
             validation = validate_solution(instance, declared_reward, declared_cost, route)
             metadata = load_metadata(result_set, dataset_path.name, results_metadata_root)
             runtime_seconds = metadata.get("runtime_seconds")
+            explicit_reward = metadata.get("explicit_reward")
+            validated_reward = metadata.get("validated_reward")
 
             rows.append(
                 {
@@ -187,6 +192,8 @@ def raw_rows(manifest_rows: list[dict], datasets_root: Path, results_root: Path,
                     "mutation_rate": result_set["mutation_rate"],
                     "reward": declared_reward,
                     "cost": declared_cost,
+                    "explicit_reward": explicit_reward,
+                    "validated_reward": validated_reward,
                     "runtime_seconds": runtime_seconds,
                     **validation,
                 }
@@ -207,20 +214,20 @@ def best_row(rows: list[dict]) -> dict:
     )[0]
 
 
-def ga_best_of_n_rows(raw: pd.DataFrame) -> pd.DataFrame:
-    ga = raw[(raw["approach_id"] == "ga") & (~raw["is_reference"]) & (raw["is_valid"])]
-    if ga.empty:
+def best_of_n_rows(raw: pd.DataFrame, approach_id: str) -> pd.DataFrame:
+    candidates = raw[(raw["approach_id"] == approach_id) & (~raw["is_reference"]) & (raw["is_valid"])]
+    if candidates.empty:
         return pd.DataFrame(columns=raw.columns)
 
     rows = []
-    for (_, _, graph), group in ga.groupby(["scenario_id", "collection", "graph"], sort=True):
+    for (_, _, graph), group in candidates.groupby(["scenario_id", "collection", "graph"], sort=True):
         selected = best_row(group.to_dict("records"))
         seed_count = group["seed"].nunique()
         row = dict(selected)
-        row["result_set_id"] = f"ga_best_of_{seed_count}_{row['scenario_id']}"
+        row["result_set_id"] = f"{approach_id}_best_of_{seed_count}_{row['scenario_id']}"
         row["source_result_set_id"] = selected["result_set_id"]
-        row["approach_id"] = "ga_best_of_n"
-        row["approach_label"] = GA_BEST_LABEL.format(seed_count=seed_count)
+        row["approach_id"] = f"{approach_id}_best_of_n"
+        row["approach_label"] = STOCHASTIC_SUMMARY_LABELS[approach_id].format(seed_count=seed_count)
         row["seed_count"] = seed_count
         rows.append(row)
     return pd.DataFrame(rows)
@@ -228,8 +235,8 @@ def ga_best_of_n_rows(raw: pd.DataFrame) -> pd.DataFrame:
 
 def comparable_rows(raw: pd.DataFrame) -> pd.DataFrame:
     deterministic = raw[(raw["approach_id"] == "greedy") & (~raw["is_reference"]) & (raw["is_valid"])]
-    ga_best = ga_best_of_n_rows(raw)
-    candidates = pd.concat([deterministic, ga_best], ignore_index=True)
+    stochastic_summaries = [best_of_n_rows(raw, approach_id) for approach_id in STOCHASTIC_SUMMARY_LABELS]
+    candidates = pd.concat([deterministic, *stochastic_summaries], ignore_index=True)
 
     complete_keys = []
     required = {"greedy", "ga_best_of_n"}
@@ -296,6 +303,7 @@ def aggregate(per_instance: pd.DataFrame) -> pd.DataFrame:
     for key, group in per_instance.groupby(group_columns, sort=True):
         scenario, collection, budget, reference_type, approach_id, approach_label = key
         runtime = group["runtime_seconds"].dropna()
+        explicit_reward = group["explicit_reward"].dropna() if "explicit_reward" in group else pd.Series(dtype=float)
         rows.append(
             {
                 "scenario_id": scenario,
@@ -306,6 +314,7 @@ def aggregate(per_instance: pd.DataFrame) -> pd.DataFrame:
                 "approach_label": approach_label,
                 "compared_instances": int(group["graph"].nunique()),
                 "mean_reward": group["reward"].mean(),
+                "mean_explicit_reward": explicit_reward.mean() if not explicit_reward.empty else None,
                 "mean_reward_ratio": group["reward_ratio"].mean(),
                 "median_reward_ratio": group["reward_ratio"].median(),
                 "win_count": int(group["is_winner"].sum()),
@@ -319,9 +328,9 @@ def aggregate(per_instance: pd.DataFrame) -> pd.DataFrame:
 
 def markdown_table(frame: pd.DataFrame) -> str:
     table = frame.copy()
-    for column in ["mean_reward", "mean_cost"]:
+    for column in ["mean_reward", "mean_explicit_reward", "mean_cost"]:
         if column in table:
-            table[column] = table[column].map(lambda value: f"{value:.1f}")
+            table[column] = table[column].map(lambda value: "" if pd.isna(value) else f"{value:.1f}")
     for column in ["mean_reward_ratio", "median_reward_ratio", "mean_budget_utilization"]:
         if column in table:
             table[column] = table[column].map(lambda value: f"{value:.3f}")
@@ -339,6 +348,7 @@ def latex_table(frame: pd.DataFrame) -> str:
         "approach_label": "Approach",
         "compared_instances": "Instances",
         "mean_reward": "Mean reward",
+        "mean_explicit_reward": "Mean explicit reward",
         "mean_reward_ratio": "Mean ratio",
         "median_reward_ratio": "Median ratio",
         "win_count": "Wins",
@@ -391,6 +401,7 @@ def write_tables(aggregate_frame: pd.DataFrame, output_dir: Path) -> None:
         "approach_label",
         "compared_instances",
         "mean_reward",
+        "mean_explicit_reward",
         "mean_reward_ratio",
         "median_reward_ratio",
         "win_count",

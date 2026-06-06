@@ -1,0 +1,3 @@
+# Jsprit Heuristic optimizes explicit rewards but reports validated TTSP rewards
+
+The Jsprit Heuristic uses jsprit to search over explicitly visited reward-bearing nodes because jsprit's route model naturally optimizes service visits rather than rewards collected from intermediate nodes on shortest-path-expanded tour segments. Result Sets from this approach still report and compare the validated TTSP reward of the expanded tour, with explicit reward recorded as metadata, so comparisons use the same tour semantics as the Greedy Baseline and Genetic Algorithm while keeping the jsprit objective practical.

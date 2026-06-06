@@ -437,6 +437,48 @@ def result_directory_summary_frame(
     return pd.DataFrame(rows)
 
 
+def result_comparison_frame(
+    instance: GraphInstance,
+    graph: nx.Graph,
+    graph_path: str,
+    selected_result_directory_name: str | None,
+) -> pd.DataFrame:
+    rows = []
+    for directory_name in result_directory_options_for_collection(instance.collection):
+        solution = load_matching_solution(graph_path, directory_name)
+        if solution is None:
+            continue
+
+        analysis = analyze_solution(instance, graph, solution)
+        valid = (
+            analysis.starts_at_depot
+            and analysis.ends_at_depot
+            and not analysis.invalid_nodes
+            and not analysis.invalid_edges
+            and analysis.reward_matches
+            and analysis.cost_matches
+        )
+        rows.append(
+            {
+                "Result directory": directory_name,
+                "Reward": solution.total_reward,
+                "Cost": solution.total_cost,
+                "Unique visited nodes": len(analysis.visited_nodes),
+                "Route hops": max(len(solution.route) - 1, 0),
+                "Valid": valid,
+                "Selected": directory_name == selected_result_directory_name,
+            }
+        )
+
+    frame = pd.DataFrame(rows)
+    if frame.empty:
+        return frame
+    return frame.sort_values(
+        ["Reward", "Cost", "Route hops", "Result directory"],
+        ascending=[False, True, True, True],
+    )
+
+
 collections = collection_index()
 no_result_directory_label = "No result directory"
 
@@ -457,6 +499,9 @@ solver_labels = {
 
 with st.sidebar:
     st.header("Controls")
+    if st.button("Refresh datasets/results"):
+        st.cache_data.clear()
+        st.rerun()
     collection_name = st.selectbox("Dataset collection", list(collections))
     graph_path = st.selectbox(
         "Graph instance",
@@ -710,7 +755,15 @@ with right_column:
     )
 
 tabs = st.tabs(
-    ["Solution", "Edges", "Raw instance", "Raw solution", "Result directories", "Collections"]
+    [
+        "Solution",
+        "Edges",
+        "Run comparison",
+        "Raw instance",
+        "Raw solution",
+        "Result directories",
+        "Collections",
+    ]
 )
 
 with tabs[0]:
@@ -736,10 +789,24 @@ with tabs[1]:
     )
 
 with tabs[2]:
+    st.subheader("Run comparison for current graph")
+    comparison_df = result_comparison_frame(
+        instance=instance,
+        graph=base_graph,
+        graph_path=graph_path,
+        selected_result_directory_name=selected_result_directory_name,
+    )
+    if comparison_df.empty:
+        st.info("No matching result files were found for this graph.")
+    else:
+        st.dataframe(comparison_df, width="stretch", hide_index=True)
+        st.caption("Rows are sorted by higher reward first, then lower cost.")
+
+with tabs[3]:
     st.subheader("Raw graph file")
     st.code(Path(graph_path).read_text(encoding="utf-8"), language="text")
 
-with tabs[3]:
+with tabs[4]:
     st.subheader("Raw solution file")
     if selected_result_directory_name is None:
         st.info("Pick a result directory to inspect a stored solution file.")
@@ -750,7 +817,7 @@ with tabs[3]:
     else:
         st.code(solution.path.read_text(encoding="utf-8"), language="text")
 
-with tabs[4]:
+with tabs[5]:
     st.subheader("Available result directories")
     result_directory_summary_df = result_directory_summary_frame(
         collection_name=collection_name,
@@ -762,6 +829,6 @@ with tabs[4]:
     else:
         st.dataframe(result_directory_summary_df, width="stretch", hide_index=True)
 
-with tabs[5]:
+with tabs[6]:
     st.subheader("Available collections")
     st.dataframe(collection_summary_frame(collections), width="stretch", hide_index=True)
