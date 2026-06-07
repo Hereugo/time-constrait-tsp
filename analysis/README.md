@@ -18,6 +18,8 @@ Use the manual `Greedy Experiments` workflow to run Greedy Baseline result sets 
 
 The dataset collections must be committed to Git for GitHub-hosted runners to access them.
 
+Both workflows support batched runs with `max_instances` and `instance_offset`. Use `max_instances=0` to run all instances. To split a 100-instance collection into four batches, run the same workflow four times with `max_instances=25` and `instance_offset` values `0`, `25`, `50`, and `75`. Output directory names stay the same across batches, so downloaded artifacts can be merged into the same `results/` and `results_metadata/` folders.
+
 After downloading and merging the artifacts into the repository root, add matching rows to `analysis/result_sets.csv` if they are new result sets, then run the comparison script again.
 
 ## Outputs

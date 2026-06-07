@@ -27,6 +27,14 @@ on:
         description: "GA mutation rate"
         required: true
         default: "0.1"
+      max_instances:
+        description: "Maximum number of instances per job; use 0 for all"
+        required: true
+        default: "0"
+      instance_offset:
+        description: "Zero-based offset into the sorted instance list"
+        required: true
+        default: "0"
 
 jobs:
   plan:
@@ -85,14 +93,45 @@ jobs:
           GENERATIONS: ${{ inputs.generations }}
           POPULATION_SIZE: ${{ inputs.population_size }}
           MUTATION_RATE: ${{ inputs.mutation_rate }}
+          MAX_INSTANCES: ${{ inputs.max_instances }}
+          INSTANCE_OFFSET: ${{ inputs.instance_offset }}
         run: |
           set -euo pipefail
           COLLECTION="planar_weighted_${SIZE}"
+          SOURCE_DIR="datasets/${COLLECTION}"
+          INPUT_DIR="${SOURCE_DIR}"
+          if [[ "${MAX_INSTANCES}" != "0" ]]; then
+            SUBSET_DIR="${RUNNER_TEMP}/${COLLECTION}_offset${INSTANCE_OFFSET}_max${MAX_INSTANCES}"
+            mkdir -p "${SUBSET_DIR}"
+            SOURCE_DIR="${SOURCE_DIR}" SUBSET_DIR="${SUBSET_DIR}" MAX_INSTANCES="${MAX_INSTANCES}" INSTANCE_OFFSET="${INSTANCE_OFFSET}" python3 - <<'PY'
+          import os
+          import shutil
+          from pathlib import Path
+
+          source_dir = Path(os.environ["SOURCE_DIR"])
+          subset_dir = Path(os.environ["SUBSET_DIR"])
+          max_instances = int(os.environ["MAX_INSTANCES"])
+          instance_offset = int(os.environ["INSTANCE_OFFSET"])
+          if max_instances < 0:
+              raise SystemExit("max_instances must be non-negative")
+          if instance_offset < 0:
+              raise SystemExit("instance_offset must be non-negative")
+
+          files = sorted(path for path in source_dir.iterdir() if path.is_file() and not path.name.startswith("."))
+          selected = files[instance_offset:instance_offset + max_instances]
+          if not selected:
+              raise SystemExit("No instances selected for this batch")
+          for path in selected:
+              shutil.copy2(path, subset_dir / path.name)
+          print(f"Selected {len(selected)} instances from {source_dir} starting at offset {instance_offset}")
+          PY
+            INPUT_DIR="${SUBSET_DIR}"
+          fi
           BUDGET_PADDED=$(printf "%03d" "${BUDGET}")
           MUTATION_LABEL=${MUTATION_RATE/./p}
           RUN_DIR="${COLLECTION}_ga_budget${BUDGET_PADDED}_seed$(printf "%03d" "${SEED}")_g${GENERATIONS}_p${POPULATION_SIZE}_m${MUTATION_LABEL}"
           python3 approaches/genetic/index.py \
-            --input "datasets/${COLLECTION}" \
+            --input "${INPUT_DIR}" \
             --output "results/${RUN_DIR}" \
             --metadata-output "results_metadata/genetic/${RUN_DIR}" \
             --budget "${BUDGET}" \
@@ -104,7 +143,7 @@ jobs:
       - name: Upload result artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ga-${{ matrix.size }}-b${{ matrix.budget }}-seed${{ matrix.seed }}
+          name: ga-${{ matrix.size }}-b${{ matrix.budget }}-seed${{ matrix.seed }}-offset${{ inputs.instance_offset }}-max${{ inputs.max_instances }}
           path: |
             results/
             results_metadata/genetic/
