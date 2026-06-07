@@ -224,11 +224,14 @@ def best_of_n_rows(raw: pd.DataFrame, approach_id: str) -> pd.DataFrame:
         selected = best_row(group.to_dict("records"))
         seed_count = group["seed"].nunique()
         row = dict(selected)
+        runtimes = group["runtime_seconds"].dropna()
         row["result_set_id"] = f"{approach_id}_best_of_{seed_count}_{row['scenario_id']}"
         row["source_result_set_id"] = selected["result_set_id"]
         row["approach_id"] = f"{approach_id}_best_of_n"
         row["approach_label"] = STOCHASTIC_SUMMARY_LABELS[approach_id].format(seed_count=seed_count)
         row["seed_count"] = seed_count
+        row["selected_seed_runtime_seconds"] = selected.get("runtime_seconds")
+        row["runtime_seconds"] = runtimes.sum() if len(runtimes) == len(group) else None
         rows.append(row)
     return pd.DataFrame(rows)
 
@@ -395,6 +398,136 @@ def latex_value(value: object) -> str:
     return latex_escape(value)
 
 
+def collection_parts(collection: str) -> tuple[str, str]:
+    for size in ("small", "medium", "large"):
+        suffix = f"_{size}"
+        if collection.endswith(suffix):
+            return collection[: -len(suffix)], size
+    return collection, "unknown"
+
+
+def title_label(value: str) -> str:
+    return value.replace("_", " ").title()
+
+
+def exact_thesis_aggregate(raw: pd.DataFrame, per_instance: pd.DataFrame) -> pd.DataFrame:
+    exact = raw[(raw["is_reference"]) & (raw["is_valid"])].copy()
+    if exact.empty or per_instance.empty:
+        return pd.DataFrame()
+
+    complete_keys = per_instance[["scenario_id", "collection", "budget", "graph"]].drop_duplicates()
+    exact = exact.merge(complete_keys, on=["scenario_id", "collection", "budget", "graph"])
+    exact = exact[exact["collection"].map(lambda collection: collection_parts(collection)[1] == "small")]
+    if exact.empty:
+        return pd.DataFrame()
+
+    exact["reward_ratio"] = 1.0
+    exact["budget_utilization"] = exact["cost"] / exact["budget"]
+    rows = []
+    group_columns = ["scenario_id", "collection", "budget", "approach_id", "approach_label"]
+    for key, group in exact.groupby(group_columns, sort=True):
+        scenario, collection, budget, approach_id, approach_label = key
+        runtime = group["runtime_seconds"].dropna()
+        rows.append(
+            {
+                "scenario_id": scenario,
+                "collection": collection,
+                "budget": budget,
+                "reference_type": "optimum",
+                "approach_id": approach_id,
+                "approach_label": approach_label,
+                "compared_instances": int(group["graph"].nunique()),
+                "mean_reward": group["reward"].mean(),
+                "mean_reward_ratio": group["reward_ratio"].mean(),
+                "mean_budget_utilization": group["budget_utilization"].mean(),
+                "mean_runtime_seconds": runtime.mean() if not runtime.empty else None,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def thesis_aggregate(raw: pd.DataFrame, per_instance: pd.DataFrame, aggregate_frame: pd.DataFrame) -> pd.DataFrame:
+    base = aggregate_frame.copy()
+    exact = exact_thesis_aggregate(raw, per_instance)
+    if not exact.empty:
+        base = pd.concat([base, exact], ignore_index=True, sort=False)
+
+    rows = []
+    for _, row in base.iterrows():
+        family, size = collection_parts(row["collection"])
+        output = row.to_dict()
+        output["graph_family"] = family
+        output["instance_size"] = size
+        rows.append(output)
+    return pd.DataFrame(rows)
+
+
+def thesis_number(value: object, decimals: int) -> str:
+    if pd.isna(value):
+        return ""
+    return f"{float(value):.{decimals}f}"
+
+
+def thesis_table(frame: pd.DataFrame, graph_family: str, instance_size: str) -> str:
+    method_order = {
+        "greedy": 0,
+        "ga_best_of_n": 1,
+        "exact": 2,
+    }
+    row_end = " " + chr(92) * 2
+    table = frame.copy()
+    table["method_order"] = table["approach_id"].map(lambda value: method_order.get(value, 99))
+    table = table.sort_values(["budget", "method_order", "approach_label"])
+
+    caption = f"{title_label(graph_family)} {title_label(instance_size)} instances"
+    lines = [
+        "\\begin{table}[ht]",
+        "\\centering",
+        f"\\caption{{{latex_escape(caption)}. $L_{{\\max}}$ denotes the travel budget.}}",
+        "\\begin{tabular}{lrrrrr}",
+        "\\toprule",
+        "Method & Instances & Avg. reward & Avg. reward ratio & Avg. budget utilization & Avg. runtime (s)" + row_end,
+        "\\midrule",
+    ]
+
+    for budget, budget_group in table.groupby("budget", sort=True):
+        lines.append(f"\\multicolumn{{6}}{{l}}{{$L_{{\\max}}={int(budget)}$}}" + row_end)
+        for _, row in budget_group.iterrows():
+            values = [
+                latex_escape(row["approach_label"]),
+                str(int(row["compared_instances"])),
+                thesis_number(row["mean_reward"], 1),
+                thesis_number(row["mean_reward_ratio"], 3),
+                thesis_number(row["mean_budget_utilization"], 3),
+                thesis_number(row["mean_runtime_seconds"], 3),
+            ]
+            lines.append(" & ".join(values) + row_end)
+
+    label = f"tab:{graph_family}-{instance_size}-ttsp-results".replace("_", "-")
+    lines.extend([
+        "\\bottomrule",
+        "\\end{tabular}",
+        f"\\label{{{label}}}",
+        "\\end{table}",
+    ])
+    return "\n".join(lines) + "\n"
+
+
+def write_thesis_tables(raw: pd.DataFrame, per_instance: pd.DataFrame, aggregate_frame: pd.DataFrame, output_dir: Path) -> None:
+    thesis = thesis_aggregate(raw, per_instance, aggregate_frame)
+    size_order = {"small": 0, "medium": 1, "large": 2}
+    groups = sorted(
+        thesis.groupby(["graph_family", "instance_size"], sort=False),
+        key=lambda item: (item[0][0], size_order.get(item[0][1], 99)),
+    )
+    parts = []
+    for (graph_family, instance_size), group in groups:
+        if instance_size == "unknown":
+            continue
+        parts.append(thesis_table(group, graph_family, instance_size))
+    (output_dir / "thesis_tables.tex").write_text("\n".join(parts), encoding="utf-8")
+
+
 def write_tables(aggregate_frame: pd.DataFrame, output_dir: Path) -> None:
     columns = [
         "scenario_id",
@@ -452,6 +585,7 @@ def write_outputs(raw: pd.DataFrame, per_instance: pd.DataFrame, aggregate_frame
     per_instance.to_csv(output_dir / "per_instance_comparison.csv", index=False)
     aggregate_frame.to_csv(output_dir / "aggregate_summary.csv", index=False)
     write_tables(aggregate_frame, output_dir)
+    write_thesis_tables(raw, per_instance, aggregate_frame, output_dir)
     write_plots(per_instance, aggregate_frame, output_dir)
 
 

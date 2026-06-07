@@ -1,5 +1,7 @@
 import argparse
+import json
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -34,6 +36,11 @@ def argument_parser():
         "--output",
         type=str,
         help="Path to an output file, or an output directory when --input is a directory.",
+    )
+    parser.add_argument(
+        "--metadata-output",
+        type=str,
+        help="Optional JSON metadata file or directory for per-instance run details.",
     )
     parser.add_argument(
         "--budget",
@@ -150,6 +157,7 @@ def greedy_algorithm(n, rewards, graph, budget, depot=1, verbose=False):
 
 
 def solve_instance(input_path, budget, verbose=False):
+    started_at = time.perf_counter()
     n, _, rewards, graph = read_input(input_path, verbose=verbose)
     total_reward, total_cost, tour = greedy_algorithm(
         n,
@@ -158,7 +166,30 @@ def solve_instance(input_path, budget, verbose=False):
         budget=budget,
         verbose=verbose,
     )
-    return format_solution(total_reward, total_cost, tour)
+    runtime_seconds = time.perf_counter() - started_at
+    solution = format_solution(total_reward, total_cost, tour)
+    metadata = {
+        "input": str(input_path),
+        "runtime_seconds": runtime_seconds,
+        "reward": total_reward,
+        "cost": total_cost,
+        "route_hops": max(len(tour) - 1, 0),
+    }
+    return solution, metadata
+
+
+def metadata_file_for_input(input_path, metadata_output_path):
+    if metadata_output_path.suffix == ".json":
+        return metadata_output_path
+    return metadata_output_path / f"{input_path.stem}.json"
+
+
+def write_metadata(metadata_path, metadata):
+    metadata_path.parent.mkdir(parents=True, exist_ok=True)
+    metadata_path.write_text(
+        json.dumps(metadata, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
 
 if __name__ == "__main__":
@@ -167,6 +198,7 @@ if __name__ == "__main__":
 
     input_path = Path(args.input)
     output_path = Path(args.output) if args.output else None
+    metadata_output_path = Path(args.metadata_output) if args.metadata_output else None
 
     if not input_path.exists():
         print(f"Input path {input_path} does not exist.", file=sys.stderr)
@@ -176,18 +208,27 @@ if __name__ == "__main__":
         if input_path.is_dir():
             if output_path is None:
                 raise ValueError("--output is required when --input is a directory.")
+            if metadata_output_path is not None and metadata_output_path.suffix == ".json":
+                raise ValueError("--metadata-output must be a directory when --input is a directory.")
 
             validate_directory_output(output_path)
+            if metadata_output_path is not None:
+                validate_directory_output(metadata_output_path)
 
             for instance_path in input_files_from_directory(input_path):
-                solution = solve_instance(
+                solution, metadata = solve_instance(
                     instance_path,
                     budget=args.budget,
                     verbose=args.verbose,
                 )
                 (output_path / instance_path.name).write_text(solution, encoding="utf-8")
+                if metadata_output_path is not None:
+                    write_metadata(
+                        metadata_output_path / f"{instance_path.stem}.json",
+                        metadata,
+                    )
         else:
-            solution = solve_instance(
+            solution, metadata = solve_instance(
                 input_path,
                 budget=args.budget,
                 verbose=args.verbose,
@@ -199,6 +240,11 @@ if __name__ == "__main__":
                 destination = output_file_for_single_input(input_path, output_path)
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 destination.write_text(solution, encoding="utf-8")
+            if metadata_output_path is not None:
+                write_metadata(
+                    metadata_file_for_input(input_path, metadata_output_path),
+                    metadata,
+                )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         raise SystemExit(1) from exc

@@ -20,12 +20,65 @@ public final class ExactChocoSolver {
 
     public static void main(String[] args) throws IOException {
         Arguments arguments = Arguments.parse(args);
-        Instance instance = Instance.read(arguments.inputPath());
-        ShortestPaths shortestPaths = ShortestPaths.from(instance.graph());
-        Solution best = solve(instance, shortestPaths, arguments.budget());
+        Path inputPath = arguments.inputPath();
+        Path outputPath = arguments.outputPath();
+        Path metadataPath = arguments.metadataPath();
 
-        System.out.println(best.reward() + " " + best.cost());
-        System.out.println(join(best.walk()));
+        if (Files.isDirectory(inputPath)) {
+            if (outputPath == null) {
+                throw new IllegalArgumentException("--output is required when --input is a directory.");
+            }
+            if (metadataPath != null && metadataPath.toString().endsWith(".json")) {
+                throw new IllegalArgumentException("--metadata-output must be a directory when --input is a directory.");
+            }
+            Files.createDirectories(outputPath);
+            if (metadataPath != null) {
+                Files.createDirectories(metadataPath);
+            }
+            try (var stream = Files.list(inputPath)) {
+                for (Path instancePath : stream
+                        .filter(Files::isRegularFile)
+                        .filter(path -> !path.getFileName().toString().startsWith("."))
+                        .sorted()
+                        .toList()) {
+                    RunResult result = solveOne(instancePath, arguments.budget());
+                    Files.writeString(outputPath.resolve(instancePath.getFileName()), result.solution().format());
+                    if (metadataPath != null) {
+                        String metadataName = stripExtension(instancePath.getFileName().toString()) + ".json";
+                        Files.writeString(metadataPath.resolve(metadataName), result.metadataJson(instancePath));
+                    }
+                }
+            }
+        } else {
+            RunResult result = solveOne(inputPath, arguments.budget());
+            if (outputPath == null) {
+                System.out.print(result.solution().format());
+            } else {
+                Path destination = Files.isDirectory(outputPath) ? outputPath.resolve(inputPath.getFileName()) : outputPath;
+                if (destination.getParent() != null) {
+                    Files.createDirectories(destination.getParent());
+                }
+                Files.writeString(destination, result.solution().format());
+            }
+            if (metadataPath != null) {
+                Path destination = Files.isDirectory(metadataPath)
+                        ? metadataPath.resolve(stripExtension(inputPath.getFileName().toString()) + ".json")
+                        : metadataPath;
+                if (destination.getParent() != null) {
+                    Files.createDirectories(destination.getParent());
+                }
+                Files.writeString(destination, result.metadataJson(inputPath));
+            }
+        }
+    }
+
+    private static RunResult solveOne(Path inputPath, int budget) throws IOException {
+        long startNanos = System.nanoTime();
+        Instance instance = Instance.read(inputPath);
+        ShortestPaths shortestPaths = ShortestPaths.from(instance.graph());
+        Solution best = solve(instance, shortestPaths, budget);
+        double runtimeSeconds = (System.nanoTime() - startNanos) / 1_000_000_000.0;
+        return new RunResult(best, runtimeSeconds);
     }
 
     private static Solution solve(Instance instance, ShortestPaths shortestPaths, int budget) {
@@ -186,15 +239,19 @@ public final class ExactChocoSolver {
         return builder.toString();
     }
 
-    private record Arguments(Path inputPath, int budget) {
+    private record Arguments(Path inputPath, Path outputPath, Path metadataPath, int budget) {
         static Arguments parse(String[] args) {
             Path inputPath = null;
+            Path outputPath = null;
+            Path metadataPath = null;
             Integer budget = null;
 
             for (int i = 0; i < args.length; i++) {
                 switch (args[i]) {
-                    case "--input" -> inputPath = Path.of(args[++i]);
-                    case "--budget" -> budget = Integer.parseInt(args[++i]);
+                    case "--input", "-i" -> inputPath = Path.of(args[++i]);
+                    case "--output", "-o" -> outputPath = Path.of(args[++i]);
+                    case "--metadata-output" -> metadataPath = Path.of(args[++i]);
+                    case "--budget", "-b" -> budget = Integer.parseInt(args[++i]);
                     default -> throw new IllegalArgumentException("Unknown argument: " + args[i]);
                 }
             }
@@ -208,7 +265,7 @@ public final class ExactChocoSolver {
             if (budget < 0) {
                 throw new IllegalArgumentException("Budget must be non-negative.");
             }
-            return new Arguments(inputPath, budget);
+            return new Arguments(inputPath, outputPath, metadataPath, budget);
         }
     }
 
@@ -256,6 +313,37 @@ public final class ExactChocoSolver {
     }
 
     private record Solution(int reward, int cost, List<Integer> walk) {
+        String format() {
+            return reward + " " + cost + "\n" + join(walk) + "\n";
+        }
+    }
+
+    private record RunResult(Solution solution, double runtimeSeconds) {
+        String metadataJson(Path inputPath) {
+            int routeHops = Math.max(solution.walk().size() - 1, 0);
+            return "{\n"
+                    + "  \"input\": " + jsonString(inputPath.toString()) + ",\n"
+                    + "  \"runtime_seconds\": " + String.format(java.util.Locale.ROOT, "%.9f", runtimeSeconds) + ",\n"
+                    + "  \"reward\": " + solution.reward() + ",\n"
+                    + "  \"cost\": " + solution.cost() + ",\n"
+                    + "  \"route_hops\": " + routeHops + "\n"
+                    + "}\n";
+        }
+    }
+
+    private static String stripExtension(String name) {
+        int index = name.lastIndexOf('.');
+        return index < 0 ? name : name.substring(0, index);
+    }
+
+    private static String jsonString(String value) {
+        return "\"" + value
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t")
+                + "\"";
     }
 
     private static final class ShortestPaths {

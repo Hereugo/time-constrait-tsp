@@ -44,6 +44,20 @@ The output should be two lines containing the total collected reward with total 
 
 NOTE: The points are numbered from 1 to n. The tour should start and end at the same point, which is point 1.
 
+## Dataset Generation
+
+The generated benchmark collections are produced with `generators/generate.sh`, a wrapper around Rudy. Rudy generates the undirected planar graph topology and edge weights; the wrapper augments each instance with one seeded integer reward per vertex.
+
+The current generated collections use Rudy planar graphs with density `40`, random edge weights in `[1, 10]`, and rewards in `[1, 100]`. The `__SEED__` placeholder is important: it is replaced per sample so each file gets an independently generated graph topology and edge-weight assignment, not only a different reward row.
+
+```sh
+./generators/generate.sh -n 100 -o datasets/planar_weighted_small -- -planar 10 40 __SEED__ -random 1 10 __SEED__
+./generators/generate.sh -n 100 -o datasets/planar_weighted_medium -- -planar 100 40 __SEED__ -random 1 10 __SEED__
+./generators/generate.sh -n 100 -o datasets/planar_weighted_large -- -planar 1000 40 __SEED__ -random 1 10 __SEED__
+```
+
+These commands create 100 instances per size class. The generated dataset files can be committed so GitHub Actions runners have the same benchmark inputs as local runs.
+
 ## Example
 
 input.txt
