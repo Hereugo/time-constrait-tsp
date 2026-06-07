@@ -1,6 +1,6 @@
-datasets/*
 results/*
 results_metadata/*
 thesis/*
 .venv/
 __pycache__/
+.DS_Store

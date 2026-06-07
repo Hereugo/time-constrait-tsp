@@ -1,0 +1,49 @@
+\begin{table}[ht]
+\centering
+\caption{Planar Weighted Small instances. $L_{\max}$ denotes the travel budget.}
+\begin{tabular}{lrrrrr}
+\toprule
+Method & Instances & Avg. reward & Avg. reward ratio & Avg. budget utilization & Avg. runtime (s) \\
+\midrule
+\multicolumn{6}{l}{$L_{\max}=30$} \\
+Greedy Baseline & 100 & 179.2 & 0.983 & 0.760 & 0.000 \\
+Genetic Algorithm Best-of-3 & 100 & 182.4 & 1.000 & 0.786 & 0.977 \\
+Small-Instance Exact Solver & 100 & 182.4 & 1.000 & 0.786 & 1.174 \\
+\multicolumn{6}{l}{$L_{\max}=100$} \\
+Greedy Baseline & 100 & 310.2 & 0.999 & 0.569 & 0.001 \\
+Genetic Algorithm Best-of-3 & 100 & 310.5 & 1.000 & 0.571 & 2.036 \\
+Small-Instance Exact Solver & 100 & 310.5 & 1.000 & 0.583 & 1.263 \\
+\bottomrule
+\end{tabular}
+\label{tab:planar-weighted-small-ttsp-results}
+\end{table}
+
+\begin{table}[ht]
+\centering
+\caption{Planar Weighted Medium instances. $L_{\max}$ denotes the travel budget.}
+\begin{tabular}{lrrrrr}
+\toprule
+Method & Instances & Avg. reward & Avg. reward ratio & Avg. budget utilization & Avg. runtime (s) \\
+\midrule
+\multicolumn{6}{l}{$L_{\max}=100$} \\
+Greedy Baseline & 100 & 1415.4 & 0.967 & 0.990 & 0.039 \\
+Genetic Algorithm Best-of-3 & 100 & 1462.4 & 1.000 & 0.996 & 17.700 \\
+\bottomrule
+\end{tabular}
+\label{tab:planar-weighted-medium-ttsp-results}
+\end{table}
+
+\begin{table}[ht]
+\centering
+\caption{Planar Weighted Large instances. $L_{\max}$ denotes the travel budget.}
+\begin{tabular}{lrrrrr}
+\toprule
+Method & Instances & Avg. reward & Avg. reward ratio & Avg. budget utilization & Avg. runtime (s) \\
+\midrule
+\multicolumn{6}{l}{$L_{\max}=100$} \\
+Greedy Baseline & 100 & 2361.4 & 0.993 & 0.996 & 2.544 \\
+Genetic Algorithm Best-of-3 & 100 & 2376.9 & 1.000 & 0.997 & 207.493 \\
+\bottomrule
+\end{tabular}
+\label{tab:planar-weighted-large-ttsp-results}
+\end{table}

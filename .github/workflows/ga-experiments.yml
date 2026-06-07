@@ -1,0 +1,112 @@
+name: GA Experiments
+
+on:
+  workflow_dispatch:
+    inputs:
+      sizes:
+        description: "Comma-separated instance size classes: small,medium,large"
+        required: true
+        default: "small,medium,large"
+      budgets:
+        description: "Comma-separated travel budgets"
+        required: true
+        default: "200,300,500"
+      seeds:
+        description: "Comma-separated random seeds"
+        required: true
+        default: "1,2,3"
+      generations:
+        description: "GA generations"
+        required: true
+        default: "100"
+      population_size:
+        description: "GA population size"
+        required: true
+        default: "50"
+      mutation_rate:
+        description: "GA mutation rate"
+        required: true
+        default: "0.1"
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - name: Build matrix
+        id: matrix
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const split = (value) => value.split(',').map((item) => item.trim()).filter(Boolean);
+            const sizes = split('${{ inputs.sizes }}');
+            const budgets = split('${{ inputs.budgets }}');
+            const seeds = split('${{ inputs.seeds }}');
+            const allowedSizes = new Set(['small', 'medium', 'large']);
+            for (const size of sizes) {
+              if (!allowedSizes.has(size)) {
+                core.setFailed(`Unsupported size: ${size}`);
+                return;
+              }
+            }
+            const include = [];
+            for (const size of sizes) {
+              for (const budget of budgets) {
+                for (const seed of seeds) {
+                  include.push({ size, budget, seed });
+                }
+              }
+            }
+            core.setOutput('matrix', JSON.stringify({ include }));
+
+  run-ga:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run GA batch
+        env:
+          SIZE: ${{ matrix.size }}
+          BUDGET: ${{ matrix.budget }}
+          SEED: ${{ matrix.seed }}
+          GENERATIONS: ${{ inputs.generations }}
+          POPULATION_SIZE: ${{ inputs.population_size }}
+          MUTATION_RATE: ${{ inputs.mutation_rate }}
+        run: |
+          set -euo pipefail
+          COLLECTION="planar_weighted_${SIZE}"
+          BUDGET_PADDED=$(printf "%03d" "${BUDGET}")
+          MUTATION_LABEL=${MUTATION_RATE/./p}
+          RUN_DIR="${COLLECTION}_ga_budget${BUDGET_PADDED}_seed$(printf "%03d" "${SEED}")_g${GENERATIONS}_p${POPULATION_SIZE}_m${MUTATION_LABEL}"
+          python3 approaches/genetic/index.py \
+            --input "datasets/${COLLECTION}" \
+            --output "results/${RUN_DIR}" \
+            --metadata-output "results_metadata/genetic/${RUN_DIR}" \
+            --budget "${BUDGET}" \
+            --seed "${SEED}" \
+            --generations "${GENERATIONS}" \
+            --population-size "${POPULATION_SIZE}" \
+            --mutation-rate "${MUTATION_RATE}"
+
+      - name: Upload result artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ga-${{ matrix.size }}-b${{ matrix.budget }}-seed${{ matrix.seed }}
+          path: |
+            results/
+            results_metadata/genetic/
+          if-no-files-found: error
+          retention-days: 14

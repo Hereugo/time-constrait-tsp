@@ -533,6 +533,9 @@ def metadata_for_instance(
             "elite_size": elite_size,
         },
         "runtime_seconds": runtime_seconds,
+        "reward": best.reward,
+        "cost": best.cost,
+        "route_hops": max(len(best.walk) - 1, 0),
         "best_reward": best.reward,
         "best_cost": best.cost,
         "best_route": list(best.walk),
@@ -552,8 +555,8 @@ def solve_instance(
     elite_size=1,
     verbose=False,
 ):
-    n, _, rewards, graph = read_input(input_path, verbose=verbose)
     started_at = time.perf_counter()
+    n, _, rewards, graph = read_input(input_path, verbose=verbose)
     best, history = genetic_algorithm(
         n=n,
         rewards=rewards,
