@@ -10,7 +10,11 @@ import pandas as pd
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = REPO_ROOT / "analysis" / "result_sets.csv"
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "analysis" / "output"
-STOCHASTIC_SUMMARY_LABELS = {
+AVERAGE_SUMMARY_LABELS = {
+    "ga": "Genetic Algorithm Average-of-{seed_count}",
+    "jsprit": "Jsprit Heuristic Average-of-{seed_count}",
+}
+BEST_SUMMARY_LABELS = {
     "ga": "Genetic Algorithm Best-of-{seed_count}",
     "jsprit": "Jsprit Heuristic Best-of-{seed_count}",
 }
@@ -228,7 +232,7 @@ def best_of_n_rows(raw: pd.DataFrame, approach_id: str) -> pd.DataFrame:
         row["result_set_id"] = f"{approach_id}_best_of_{seed_count}_{row['scenario_id']}"
         row["source_result_set_id"] = selected["result_set_id"]
         row["approach_id"] = f"{approach_id}_best_of_n"
-        row["approach_label"] = STOCHASTIC_SUMMARY_LABELS[approach_id].format(seed_count=seed_count)
+        row["approach_label"] = BEST_SUMMARY_LABELS[approach_id].format(seed_count=seed_count)
         row["seed_count"] = seed_count
         row["selected_seed_runtime_seconds"] = selected.get("runtime_seconds")
         row["runtime_seconds"] = runtimes.sum() if len(runtimes) == len(group) else None
@@ -236,13 +240,40 @@ def best_of_n_rows(raw: pd.DataFrame, approach_id: str) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def average_of_n_rows(raw: pd.DataFrame, approach_id: str) -> pd.DataFrame:
+    candidates = raw[(raw["approach_id"] == approach_id) & (~raw["is_reference"]) & (raw["is_valid"])]
+    if candidates.empty:
+        return pd.DataFrame(columns=raw.columns)
+
+    rows = []
+    for (_, _, graph), group in candidates.groupby(["scenario_id", "collection", "graph"], sort=True):
+        seed_count = group["seed"].nunique()
+        row = group.sort_values(["result_set_id"]).iloc[0].to_dict()
+        runtimes = group["runtime_seconds"].dropna()
+        row["result_set_id"] = f"{approach_id}_average_of_{seed_count}_{row['scenario_id']}"
+        row["source_result_set_id"] = ";".join(sorted(group["result_set_id"].astype(str)))
+        row["approach_id"] = f"{approach_id}_average_of_n"
+        row["approach_label"] = AVERAGE_SUMMARY_LABELS[approach_id].format(seed_count=seed_count)
+        row["seed"] = None
+        row["seed_count"] = seed_count
+        row["reward"] = group["reward"].mean()
+        row["cost"] = group["cost"].mean()
+        row["runtime_seconds"] = runtimes.mean() if len(runtimes) == len(group) else None
+        row["computed_reward"] = group["computed_reward"].mean()
+        row["computed_cost"] = group["computed_cost"].mean()
+        row["unique_visited_nodes"] = group["unique_visited_nodes"].mean()
+        row["route_hops"] = group["route_hops"].mean()
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
 def comparable_rows(raw: pd.DataFrame) -> pd.DataFrame:
     deterministic = raw[(raw["approach_id"] == "greedy") & (~raw["is_reference"]) & (raw["is_valid"])]
-    stochastic_summaries = [best_of_n_rows(raw, approach_id) for approach_id in STOCHASTIC_SUMMARY_LABELS]
+    stochastic_summaries = [average_of_n_rows(raw, approach_id) for approach_id in AVERAGE_SUMMARY_LABELS]
     candidates = pd.concat([deterministic, *stochastic_summaries], ignore_index=True)
 
     complete_keys = []
-    required = {"greedy", "ga_best_of_n"}
+    required = {"greedy", "ga_average_of_n"}
     for key, group in candidates.groupby(["scenario_id", "collection", "budget", "graph"], sort=True):
         if set(group["approach_id"]) >= required:
             complete_keys.append(key)
@@ -260,24 +291,24 @@ def comparable_rows(raw: pd.DataFrame) -> pd.DataFrame:
 
     for key, group in candidates.groupby(["scenario_id", "collection", "budget", "graph"], sort=True):
         reference_type = "best_known"
-        reference_reward = int(group["reward"].max())
+        reference_reward = float(group["reward"].max())
         if key in references.index:
             reference_rows = references.loc[[key]] if isinstance(references.loc[key], pd.Series) else references.loc[key]
             if isinstance(reference_rows, pd.Series):
-                reference_reward = int(reference_rows["reward"])
+                reference_reward = float(reference_rows["reward"])
             else:
-                reference_reward = int(reference_rows.sort_values(["reward", "cost"], ascending=[False, True]).iloc[0]["reward"])
+                reference_reward = float(reference_rows.sort_values(["reward", "cost"], ascending=[False, True]).iloc[0]["reward"])
             reference_type = "optimum"
             for _, row in group.iterrows():
-                if int(row["reward"]) > reference_reward:
-                    anomalies.append((key, row["result_set_id"], int(row["reward"]), reference_reward))
+                if float(row["reward"]) > reference_reward:
+                    anomalies.append((key, row["result_set_id"], float(row["reward"]), reference_reward))
 
         winner = best_row(group.to_dict("records"))
         for _, row in group.iterrows():
             output = row.to_dict()
             output["reference_type"] = reference_type
             output["reference_reward"] = reference_reward
-            output["reward_ratio"] = reward_ratio(int(row["reward"]), reference_reward)
+            output["reward_ratio"] = reward_ratio(float(row["reward"]), reference_reward)
             output["is_winner"] = row["result_set_id"] == winner["result_set_id"]
             annotated.append(output)
 
@@ -291,7 +322,7 @@ def comparable_rows(raw: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(annotated)
 
 
-def reward_ratio(reward: int, reference_reward: int) -> float | None:
+def reward_ratio(reward: float, reference_reward: float) -> float | None:
     if reference_reward == 0:
         return 1.0 if reward == 0 else None
     return reward / reference_reward
@@ -327,6 +358,100 @@ def aggregate(per_instance: pd.DataFrame) -> pd.DataFrame:
             }
         )
     return pd.DataFrame(rows).sort_values(["collection", "budget", "approach_id"])
+
+
+def reliability_summary(raw: pd.DataFrame, approach_id: str = "ga") -> pd.DataFrame:
+    candidates = raw[(raw["approach_id"] == approach_id) & (~raw["is_reference"]) & (raw["is_valid"])]
+    if candidates.empty:
+        return pd.DataFrame()
+
+    rows = []
+    group_columns = ["scenario_id", "collection", "budget", "graph"]
+    for (_, collection, budget, graph), group in candidates.groupby(group_columns, sort=True):
+        if group["seed"].nunique() < 2:
+            continue
+        reward = group["reward"]
+        reward_mean = reward.mean()
+        reward_std = reward.std()
+        reward_range = reward.max() - reward.min()
+        _, instance_size = collection_parts(collection)
+        rows.append(
+            {
+                "collection": collection,
+                "instance_size": instance_size,
+                "budget": budget,
+                "graph": graph,
+                "seed_count": int(group["seed"].nunique()),
+                "mean_reward": reward_mean,
+                "reward_std": reward_std,
+                "relative_reward_std": reward_std / reward_mean if reward_mean else 0,
+                "reward_range": reward_range,
+                "identical_seed_rewards": reward_range == 0,
+            }
+        )
+
+    if not rows:
+        return pd.DataFrame()
+
+    frame = pd.DataFrame(rows)
+    summary_rows = []
+    size_order = {"small": 0, "medium": 1, "large": 2}
+    for (instance_size, budget), group in frame.groupby(["instance_size", "budget"], sort=False):
+        summary_rows.append(
+            {
+                "instance_size": instance_size,
+                "budget": int(budget),
+                "graph_budget_cases": int(len(group)),
+                "seed_count": int(group["seed_count"].max()),
+                "identical_seed_cases": int(group["identical_seed_rewards"].sum()),
+                "identical_seed_share": group["identical_seed_rewards"].mean(),
+                "mean_reward_std": group["reward_std"].mean(),
+                "mean_relative_reward_std": group["relative_reward_std"].mean(),
+                "median_reward_range": group["reward_range"].median(),
+                "max_reward_range": group["reward_range"].max(),
+            }
+        )
+    return pd.DataFrame(summary_rows).sort_values(
+        ["instance_size", "budget"], key=lambda column: column.map(lambda value: size_order.get(value, 99))
+        if column.name == "instance_size"
+        else column
+    )
+
+
+def reliability_markdown_table(frame: pd.DataFrame) -> str:
+    table = frame.copy()
+    table["identical_seed_share"] = table["identical_seed_share"].map(lambda value: f"{value:.3f}")
+    table["mean_reward_std"] = table["mean_reward_std"].map(lambda value: f"{value:.3f}")
+    table["mean_relative_reward_std"] = table["mean_relative_reward_std"].map(lambda value: f"{value:.4f}")
+    table["median_reward_range"] = table["median_reward_range"].map(lambda value: f"{value:.1f}")
+    table["max_reward_range"] = table["max_reward_range"].map(lambda value: f"{value:.1f}")
+    return table.to_markdown(index=False, disable_numparse=True) + "\n"
+
+
+def reliability_latex_table(frame: pd.DataFrame) -> str:
+    rows = []
+    for _, row in frame.iterrows():
+        rows.append(
+            {
+                "Instance size": title_label(row["instance_size"]),
+                "Travel budget": str(int(row["budget"])),
+                "Graph-budget cases": str(int(row["graph_budget_cases"])),
+                "Same reward cases": str(int(row["identical_seed_cases"])),
+                "Same reward share": thesis_number(row["identical_seed_share"], 3),
+                "Mean rel. std.": thesis_number(row["mean_relative_reward_std"], 4),
+                "Median range": thesis_number(row["median_reward_range"], 1),
+                "Max range": thesis_number(row["max_reward_range"], 1),
+            }
+        )
+
+    row_end = " " + chr(92) * 2
+    lines = ["\\begin{tabular}{lrrrrrrr}", "\\toprule"]
+    lines.append(" & ".join(latex_escape(column) for column in rows[0]) + row_end)
+    lines.append("\\midrule")
+    for row in rows:
+        lines.append(" & ".join(row.values()) + row_end)
+    lines.extend(["\\bottomrule", "\\end{tabular}"])
+    return "\n".join(lines) + "\n"
 
 
 def markdown_table(frame: pd.DataFrame) -> str:
@@ -468,11 +593,32 @@ def thesis_number(value: object, decimals: int) -> str:
     return f"{float(value):.{decimals}f}"
 
 
+def bold_latex(value: str) -> str:
+    return f"\\textbf{{{value}}}" if value else value
+
+
+def mark_best_display_values(rows: list[dict], column: str, higher_is_better: bool) -> set[int]:
+    candidates = [(index, row[column]) for index, row in enumerate(rows) if row[column]]
+    if not candidates:
+        return set()
+
+    ordered = sorted(candidates, key=lambda item: float(item[1]), reverse=higher_is_better)
+    best_value = ordered[0][1]
+    tied_indexes = {index for index, value in candidates if value == best_value}
+    exact_ties = {index for index in tied_indexes if rows[index]["approach_id"] == "exact"}
+    return exact_ties or tied_indexes
+
+
 def thesis_table(frame: pd.DataFrame, graph_family: str, instance_size: str) -> str:
     method_order = {
         "greedy": 0,
-        "ga_best_of_n": 1,
+        "ga_average_of_n": 1,
         "exact": 2,
+    }
+    instance_vertex_counts = {
+        "small": 10,
+        "medium": 100,
+        "large": 1000,
     }
     row_end = " " + chr(92) * 2
     table = frame.copy()
@@ -480,26 +626,50 @@ def thesis_table(frame: pd.DataFrame, graph_family: str, instance_size: str) -> 
     table = table.sort_values(["budget", "method_order", "approach_label"])
 
     caption = f"{title_label(graph_family)} {title_label(instance_size)} instances"
+    vertex_count = instance_vertex_counts.get(instance_size)
+    if vertex_count is not None:
+        caption = f"{caption} ({vertex_count} vertices each)"
     lines = [
         "\\begin{table}[ht]",
         "\\centering",
         f"\\caption{{{latex_escape(caption)}. $L_{{\\max}}$ denotes the travel budget.}}",
-        "\\begin{tabular}{lrrrrr}",
+        "\\begin{tabular}{lrrrr}",
         "\\toprule",
-        "Method & Instances & Avg. reward & Avg. reward ratio & Avg. budget utilization & Avg. runtime (s)" + row_end,
+        "Method & Instances & Avg. reward & Avg. budget utilization & Avg. runtime (s)" + row_end,
         "\\midrule",
     ]
 
     for budget, budget_group in table.groupby("budget", sort=True):
-        lines.append(f"\\multicolumn{{6}}{{l}}{{$L_{{\\max}}={int(budget)}$}}" + row_end)
+        lines.append(f"\\multicolumn{{5}}{{l}}{{$L_{{\\max}}={int(budget)}$}}" + row_end)
+        rows = []
         for _, row in budget_group.iterrows():
+            rows.append(
+                {
+                    "approach_id": row["approach_id"],
+                    "approach_label": latex_escape(row["approach_label"]),
+                    "compared_instances": str(int(row["compared_instances"])),
+                    "mean_reward": thesis_number(row["mean_reward"], 1),
+                    "mean_budget_utilization": thesis_number(row["mean_budget_utilization"], 3),
+                    "mean_runtime_seconds": thesis_number(row["mean_runtime_seconds"], 3),
+                }
+            )
+
+        bold_indexes = {
+            "mean_reward": mark_best_display_values(rows, "mean_reward", True),
+            "mean_budget_utilization": mark_best_display_values(rows, "mean_budget_utilization", True),
+            "mean_runtime_seconds": mark_best_display_values(rows, "mean_runtime_seconds", False),
+        }
+        for index, row in enumerate(rows):
             values = [
-                latex_escape(row["approach_label"]),
-                str(int(row["compared_instances"])),
-                thesis_number(row["mean_reward"], 1),
-                thesis_number(row["mean_reward_ratio"], 3),
-                thesis_number(row["mean_budget_utilization"], 3),
-                thesis_number(row["mean_runtime_seconds"], 3),
+                row["approach_label"],
+                row["compared_instances"],
+                bold_latex(row["mean_reward"]) if index in bold_indexes["mean_reward"] else row["mean_reward"],
+                bold_latex(row["mean_budget_utilization"])
+                if index in bold_indexes["mean_budget_utilization"]
+                else row["mean_budget_utilization"],
+                bold_latex(row["mean_runtime_seconds"])
+                if index in bold_indexes["mean_runtime_seconds"]
+                else row["mean_runtime_seconds"],
             ]
             lines.append(" & ".join(values) + row_end)
 
@@ -547,7 +717,16 @@ def write_tables(aggregate_frame: pd.DataFrame, output_dir: Path) -> None:
     (output_dir / "aggregate_summary.tex").write_text(latex_table(aggregate_frame), encoding="utf-8")
 
 
+def write_reliability_outputs(frame: pd.DataFrame, output_dir: Path) -> None:
+    if frame.empty:
+        return
+    frame.to_csv(output_dir / "ga_seed_reliability_by_size.csv", index=False)
+    (output_dir / "ga_seed_reliability_by_size.md").write_text(reliability_markdown_table(frame), encoding="utf-8")
+    (output_dir / "ga_seed_reliability_by_size.tex").write_text(reliability_latex_table(frame), encoding="utf-8")
+
+
 def write_plots(per_instance: pd.DataFrame, aggregate_frame: pd.DataFrame, output_dir: Path) -> None:
+    import numpy as np
     import matplotlib.pyplot as plt
 
     plot_dir = output_dir / "plots"
@@ -578,13 +757,83 @@ def write_plots(per_instance: pd.DataFrame, aggregate_frame: pd.DataFrame, outpu
     plt.savefig(plot_dir / "reward_ratio_distribution.png", dpi=200)
     plt.close(fig)
 
+    size_order = ["small", "medium", "large"]
+    runtime_data = aggregate_frame.copy()
+    runtime_data[["graph_family", "instance_size"]] = runtime_data["collection"].apply(
+        lambda value: pd.Series(collection_parts(value))
+    )
+    runtime_data = runtime_data[
+        (runtime_data["instance_size"].isin(size_order))
+        & (runtime_data["mean_runtime_seconds"].notna())
+        & (runtime_data["mean_runtime_seconds"] > 0)
+    ]
 
-def write_outputs(raw: pd.DataFrame, per_instance: pd.DataFrame, aggregate_frame: pd.DataFrame, output_dir: Path) -> None:
+    required_sizes = set(size_order)
+    common_budgets = [
+        budget
+        for budget, group in runtime_data.groupby("budget", sort=True)
+        if set(group["instance_size"]) >= required_sizes
+    ]
+    runtime_data = runtime_data[runtime_data["budget"].isin(common_budgets)]
+
+    complete_approaches = []
+    expected_points = len(common_budgets) * len(size_order)
+    for approach_label, group in runtime_data.groupby("approach_label", sort=True):
+        actual_points = group[["budget", "instance_size"]].drop_duplicates().shape[0]
+        if actual_points == expected_points:
+            complete_approaches.append(approach_label)
+
+    if common_budgets and complete_approaches:
+        x_positions = np.arange(len(size_order))
+        fig, axes = plt.subplots(
+            1,
+            len(complete_approaches),
+            figsize=(5 * len(complete_approaches), 4.5),
+            sharey=True,
+        )
+        axes = np.atleast_1d(axes)
+
+        for axis, approach_label in zip(axes, complete_approaches):
+            approach_data = runtime_data[runtime_data["approach_label"] == approach_label]
+            for budget in common_budgets:
+                budget_data = approach_data[approach_data["budget"] == budget]
+                runtimes = np.array(
+                    [
+                        budget_data[budget_data["instance_size"] == size]["mean_runtime_seconds"].iloc[0]
+                        for size in size_order
+                    ],
+                    dtype=float,
+                )
+                axis.plot(x_positions, runtimes, marker="o", label=f"Budget {int(budget)}")
+
+            axis.set_title(approach_label)
+            axis.set_xticks(x_positions, [title_label(size) for size in size_order])
+            axis.set_xlabel("Instance size class")
+            axis.set_yscale("log")
+            axis.grid(True, axis="y", which="both", alpha=0.3)
+
+        axes[0].set_ylabel("Mean per-instance runtime (s)")
+        fig.suptitle("Mean per-instance runtime by instance size")
+        handles, labels = axes[0].get_legend_handles_labels()
+        fig.legend(handles, labels, title="Travel budget", loc="lower center", ncol=len(common_budgets))
+        fig.tight_layout(rect=(0, 0.1, 1, 0.95))
+        plt.savefig(plot_dir / "mean_runtime_by_instance_size.png", dpi=200)
+        plt.close(fig)
+
+
+def write_outputs(
+    raw: pd.DataFrame,
+    per_instance: pd.DataFrame,
+    aggregate_frame: pd.DataFrame,
+    reliability_frame: pd.DataFrame,
+    output_dir: Path,
+) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     raw.to_csv(output_dir / "raw_validated_results.csv", index=False)
     per_instance.to_csv(output_dir / "per_instance_comparison.csv", index=False)
     aggregate_frame.to_csv(output_dir / "aggregate_summary.csv", index=False)
     write_tables(aggregate_frame, output_dir)
+    write_reliability_outputs(reliability_frame, output_dir)
     write_thesis_tables(raw, per_instance, aggregate_frame, output_dir)
     write_plots(per_instance, aggregate_frame, output_dir)
 
@@ -609,7 +858,8 @@ def main() -> None:
     if per_instance.empty:
         raise SystemExit("No complete comparable instances found.")
     aggregate_frame = aggregate(per_instance)
-    write_outputs(raw, per_instance, aggregate_frame, args.output_dir)
+    reliability_frame = reliability_summary(raw)
+    write_outputs(raw, per_instance, aggregate_frame, reliability_frame, args.output_dir)
     print(f"Wrote comparison outputs to {args.output_dir.relative_to(REPO_ROOT)}")
 
 
