@@ -1,5 +1,52 @@
 # Graph Instance Generator
 
+## Euclidean Complete-Graph Matrix Generator
+
+`generate_euclidean_matrix.py` generates synthetic Euclidean complete-graph TTSP instances in matrix format. The travel budget is not written to the dataset file; pass `L_max` to the algorithms with `--budget`.
+
+```bash
+python3 generators/generate_euclidean_matrix.py \
+  --samples 100 \
+  --nodes 50 \
+  --output-dir datasets/euclidean_complete_small \
+  --seed-base 1000 \
+  --coordinate-max 1000 \
+  --reward-min 1 \
+  --reward-max 100 \
+  --include-reference-budget
+```
+
+Each generated file has the format:
+
+```text
+# coord 1 x y
+# coord 2 x y
+TTSP_MATRIX
+n
+r1 r2 r3 ... rn
+w11 w12 w13 ... w1n
+w21 w22 w23 ... w2n
+...
+wn1 wn2 wn3 ... wnn
+```
+
+- `n`: number of vertices, including depot node `1`
+- `r1 ... rn`: reward for each node; `r1` is `0` for the depot
+- `wij`: rounded Euclidean edge weight from node `i` to node `j`
+- `# coord` comments: original generated coordinates, ignored by algorithms
+- `# reference_nearest_neighbor_tour_cost`: optional full-tour cost comment for choosing budgets, ignored by algorithms
+
+Run one generated collection with an explicit travel budget:
+
+```bash
+python3 approaches/greedy/index.py \
+  --input datasets/euclidean_complete_small \
+  --output results/euclidean_complete_small_500 \
+  --budget 500
+```
+
+## Rudy Sparse-Graph Generator
+
 `generate.sh` is a small wrapper around `generators/rudy/rudy`.
 
 It generates one or more graph instance files by:

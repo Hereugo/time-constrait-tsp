@@ -15,8 +15,9 @@ from common import (  # noqa: E402
     format_solution,
     input_files_from_directory,
     output_file_for_single_input,
-    read_input,
+    read_input_with_budget,
     replace_segment_counts,
+    resolve_budget,
     tour_node_counts,
     validate_directory_output,
     walk_cost,
@@ -158,7 +159,8 @@ def greedy_algorithm(n, rewards, graph, budget, depot=1, verbose=False):
 
 def solve_instance(input_path, budget, verbose=False):
     started_at = time.perf_counter()
-    n, _, rewards, graph = read_input(input_path, verbose=verbose)
+    n, _, rewards, graph, file_budget = read_input_with_budget(input_path, verbose=verbose)
+    budget = resolve_budget(budget, file_budget)
     total_reward, total_cost, tour = greedy_algorithm(
         n,
         rewards,

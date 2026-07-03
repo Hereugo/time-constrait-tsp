@@ -2,42 +2,109 @@ from collections import Counter
 from heapq import heappop, heappush
 
 
-def read_input(file_path, verbose=False):
+def _content_lines(file_path):
     with open(file_path, "r") as f:
-        data = f.read()
-        lines = [line.strip() for line in data.splitlines() if line.strip()]
-        if len(lines) < 2:
-            raise ValueError("Input file must contain at least a header and reward line.")
+        return [
+            line.strip()
+            for line in f.read().splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
 
-        n, m = map(int, lines[0].split())
+
+def _read_edge_list(lines, verbose=False):
+    n, m = map(int, lines[0].split())
+    if verbose:
+        print(f"Node Count: {n}")
+        print(f"Edge Count: {m}")
+
+    rewards = list(map(int, lines[1].split()))
+    if len(rewards) != n:
+        raise ValueError(
+            f"Input declares {n} nodes but contains {len(rewards)} rewards."
+        )
+    if verbose:
+        print(f"Rewards: {rewards}")
+
+    edge_lines = lines[2:]
+    if len(edge_lines) != m:
+        raise ValueError(
+            f"Input declares {m} edges but contains {len(edge_lines)} edge rows."
+        )
+
+    graph = {node: {} for node in range(1, n + 1)}
+    for line in edge_lines:
+        u, v, w = map(int, line.split())
         if verbose:
-            print(f"Node Count: {n}")
-            print(f"Edge Count: {m}")
+            print(f"Edge: {u} - {v} (Weight: {w})")
 
-        rewards = list(map(int, lines[1].split()))
-        if len(rewards) != n:
+        graph[u][v] = w
+        graph[v][u] = w
+
+    return n, m, rewards, graph, None
+
+
+def _read_matrix(lines, verbose=False):
+    if len(lines) < 3:
+        raise ValueError("Matrix input must contain format marker, node count, rewards, and matrix rows.")
+
+    n = int(lines[1])
+    rewards = list(map(int, lines[2].split()))
+    if len(rewards) != n:
+        raise ValueError(
+            f"Input declares {n} nodes but contains {len(rewards)} rewards."
+        )
+
+    matrix_lines = lines[3:]
+    if len(matrix_lines) != n:
+        raise ValueError(
+            f"Matrix input declares {n} nodes but contains {len(matrix_lines)} matrix rows."
+        )
+
+    graph = {node: {} for node in range(1, n + 1)}
+    for row_index, line in enumerate(matrix_lines, start=1):
+        row = list(map(int, line.split()))
+        if len(row) != n:
             raise ValueError(
-                f"Input declares {n} nodes but contains {len(rewards)} rewards."
+                f"Matrix row {row_index} contains {len(row)} values, expected {n}."
             )
-        if verbose:
-            print(f"Rewards: {rewards}")
+        for column_index, weight in enumerate(row, start=1):
+            if row_index == column_index:
+                if weight != 0:
+                    raise ValueError(f"Matrix diagonal at node {row_index} must be 0.")
+                continue
+            if weight <= 0:
+                raise ValueError(
+                    f"Matrix edge {row_index}-{column_index} must have positive weight."
+                )
+            graph[row_index][column_index] = weight
 
-        edge_lines = lines[2:]
-        if len(edge_lines) != m:
-            raise ValueError(
-                f"Input declares {m} edges but contains {len(edge_lines)} edge rows."
-            )
+    m = n * (n - 1) // 2
+    if verbose:
+        print(f"Node Count: {n}")
+        print(f"Edge Count: {m}")
+        print(f"Rewards: {rewards}")
+    return n, m, rewards, graph, None
 
-        graph = {node: {} for node in range(1, n + 1)}
-        for line in edge_lines:
-            u, v, w = map(int, line.split())
-            if verbose:
-                print(f"Edge: {u} - {v} (Weight: {w})")
 
-            graph[u][v] = w
-            graph[v][u] = w
+def read_input_with_budget(file_path, verbose=False):
+    lines = _content_lines(file_path)
+    if len(lines) < 2:
+        raise ValueError("Input file must contain at least a header and reward line.")
 
+    if lines[0] == "TTSP_MATRIX":
+        return _read_matrix(lines, verbose=verbose)
+    return _read_edge_list(lines, verbose=verbose)
+
+
+def read_input(file_path, verbose=False):
+    n, m, rewards, graph, _ = read_input_with_budget(file_path, verbose=verbose)
     return n, m, rewards, graph
+
+
+def resolve_budget(cli_budget, file_budget):
+    if cli_budget is not None:
+        return cli_budget
+    raise ValueError("--budget is required.")
 
 
 def edge_weight(graph, source, target):

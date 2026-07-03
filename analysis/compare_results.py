@@ -63,9 +63,34 @@ def read_manifest(path: Path) -> list[dict]:
 
 
 def read_instance(path: Path) -> Instance:
-    lines = [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    lines = [
+        line.strip()
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
     if len(lines) < 2:
         raise ValueError(f"Dataset file {path} must contain at least two lines.")
+
+    if lines[0] == "TTSP_MATRIX":
+        if len(lines) < 3:
+            raise ValueError(f"Matrix dataset file {path} must contain node count, rewards, and matrix rows.")
+        n = int(lines[1])
+        rewards = list(map(int, lines[2].split()))
+        if len(rewards) != n:
+            raise ValueError(f"Dataset file {path} declares {n} nodes but has {len(rewards)} rewards.")
+        matrix_lines = lines[3:]
+        if len(matrix_lines) != n:
+            raise ValueError(f"Dataset file {path} declares {n} nodes but has {len(matrix_lines)} matrix rows.")
+
+        edges = {}
+        for row_index, line in enumerate(matrix_lines, start=1):
+            row = list(map(int, line.split()))
+            if len(row) != n:
+                raise ValueError(f"Matrix row {row_index} in {path} has {len(row)} values, expected {n}.")
+            for column_index, weight in enumerate(row, start=1):
+                if row_index != column_index:
+                    edges[(row_index, column_index)] = weight
+        return Instance(n=n, rewards=rewards, edges=edges)
 
     n, m = map(int, lines[0].split())
     rewards = list(map(int, lines[1].split()))

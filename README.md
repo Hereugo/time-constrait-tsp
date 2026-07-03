@@ -34,9 +34,31 @@ The implemented scope compares a fast Greedy Baseline, a Genetic Algorithm, and 
 
 ## Input Format
 
-The first line of the input contains two integers n and m.
-The second line contains n integers r1, r2, ..., rn, where ri is the reward associated with point i.
-The next m lines each contain three integers u, v, and w, representing an edge from point u to point v with a time cost of w.
+The legacy edge-list input format is:
+
+```text
+n m
+r1 r2 ... rn
+u1 v1 w1
+...
+um vm wm
+```
+
+The Euclidean complete-graph matrix input format is:
+
+```text
+TTSP_MATRIX
+n
+r1 r2 ... rn
+w11 w12 ... w1n
+w21 w22 ... w2n
+...
+wn1 wn2 ... wnn
+```
+
+In both formats, node `1` is the depot and its reward should be `0`. The travel budget `L_max` is not stored in dataset files; pass it to algorithms with `--budget`.
+
+Matrix files may include comment lines starting with `#`. The Euclidean generator uses these comments to store the original coordinates for traceability.
 
 ## Output Format
 
@@ -58,16 +80,38 @@ The current generated collections use Rudy planar graphs with density `40`, rand
 
 These commands create 100 instances per size class. The generated dataset files can be committed so GitHub Actions runners have the same benchmark inputs as local runs.
 
+Synthetic Euclidean complete-graph matrix instances are generated with `generators/generate_euclidean_matrix.py`. Each instance samples coordinates, assigns reward `0` to depot node `1`, assigns seeded integer rewards to non-depot nodes, and writes rounded Euclidean distances as an `n x n` matrix.
+
+```sh
+python3 generators/generate_euclidean_matrix.py \
+  --samples 100 \
+  --nodes 50 \
+  --output-dir datasets/euclidean_complete_small \
+  --seed-base 1000 \
+  --coordinate-max 1000 \
+  --reward-min 1 \
+  --reward-max 100 \
+  --include-reference-budget
+```
+
+Run algorithms by supplying `L_max` separately:
+
+```sh
+python3 approaches/greedy/index.py --input datasets/euclidean_complete_small --output results/euclidean_complete_small_500 --budget 500
+python3 approaches/genetic/index.py --input datasets/euclidean_complete_small --output results/euclidean_complete_small_ga_budget500_seed001 --budget 500 --seed 1
+```
+
 ## Example
 
 input.txt
 
 ```
-n m
+TTSP_MATRIX
+n
 r1 r2 ... rn
-u1 v1 w1
+w11 w12 ... w1n
 ...
-um vm wm
+wn1 wn2 ... wnn
 ```
 
 output.txt

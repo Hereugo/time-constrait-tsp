@@ -274,9 +274,14 @@ public final class ExactChocoSolver {
             List<String> lines = Files.readAllLines(path).stream()
                     .map(String::trim)
                     .filter(line -> !line.isEmpty())
+                    .filter(line -> !line.startsWith("#"))
                     .toList();
             if (lines.size() < 2) {
                 throw new IllegalArgumentException("Input file must contain at least a header and reward line.");
+            }
+
+            if (lines.get(0).equals("TTSP_MATRIX")) {
+                return readMatrix(path, lines);
             }
 
             String[] header = lines.get(0).split("\\s+");
@@ -307,6 +312,37 @@ public final class ExactChocoSolver {
                 int w = Integer.parseInt(edge[2]);
                 graph[u][v] = w;
                 graph[v][u] = w;
+            }
+            return new Instance(n, rewards, graph);
+        }
+
+        private static Instance readMatrix(Path path, List<String> lines) {
+            if (lines.size() < 3) {
+                throw new IllegalArgumentException("Matrix input " + path + " must contain node count, rewards, and matrix rows.");
+            }
+
+            int n = Integer.parseInt(lines.get(1));
+            int[] rewards = Arrays.stream(lines.get(2).split("\\s+"))
+                    .mapToInt(Integer::parseInt)
+                    .toArray();
+            if (rewards.length != n) {
+                throw new IllegalArgumentException("Input declares " + n + " nodes but contains " + rewards.length + " rewards.");
+            }
+            if (lines.size() - 3 != n) {
+                throw new IllegalArgumentException("Matrix input declares " + n + " nodes but contains " + (lines.size() - 3) + " matrix rows.");
+            }
+
+            int[][] graph = new int[n + 1][n + 1];
+            for (int row = 1; row <= n; row++) {
+                int[] weights = Arrays.stream(lines.get(row + 2).split("\\s+"))
+                        .mapToInt(Integer::parseInt)
+                        .toArray();
+                if (weights.length != n) {
+                    throw new IllegalArgumentException("Matrix row " + row + " contains " + weights.length + " values, expected " + n + ".");
+                }
+                for (int column = 1; column <= n; column++) {
+                    graph[row][column] = weights[column - 1];
+                }
             }
             return new Instance(n, rewards, graph);
         }
