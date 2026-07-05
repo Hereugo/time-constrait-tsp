@@ -9,6 +9,7 @@ python3 generators/generate_euclidean_matrix.py \
   --samples 100 \
   --nodes 50 \
   --output-dir datasets/euclidean_complete_small \
+  --scenario uniform_center_depot \
   --seed-base 1000 \
   --coordinate-max 1000 \
   --reward-min 1 \
@@ -34,7 +35,47 @@ wn1 wn2 wn3 ... wnn
 - `r1 ... rn`: reward for each node; `r1` is `0` for the depot
 - `wij`: rounded Euclidean edge weight from node `i` to node `j`
 - `# coord` comments: original generated coordinates, ignored by algorithms
+- `# scenario`, `# geometry`, `# depot_position`, and `# reward_pattern`: generated experiment setup comments, ignored by algorithms
 - `# reference_nearest_neighbor_tour_cost`: optional full-tour cost comment for choosing budgets, ignored by algorithms
+
+Scenarios provide readable experiment setups. The default `uniform_random_depot` preserves the original uniformly sampled coordinates and uniform rewards, with depot node `1` sampled like every other point. Named scenarios make it clearer what pressure an experiment applies:
+
+- `uniform_center_depot`: uniform coordinates with the depot near the center
+- `uniform_corner_depot`: uniform coordinates with the depot near a corner
+- `clustered_center_depot`: clustered coordinates with the depot near the center
+- `clustered_offset_depot`: clustered coordinates with the depot placed inside one cluster
+- `clustered_outliers`: clustered coordinates plus sparse outlier nodes
+- `corridor`: coordinates stretched along a corridor with the depot near one end
+- `ring`: coordinates around a ring with the depot near the center
+- `reward_near_depot`: higher rewards closer to the depot
+- `reward_far_from_depot`: higher rewards farther from the depot
+- `reward_cluster_hotspot`: one cluster has higher rewards than the others
+
+Scenario details can be overridden for focused experiments:
+
+```bash
+python3 generators/generate_euclidean_matrix.py \
+  --samples 100 \
+  --nodes 100 \
+  --output-dir datasets/euclidean_clustered_hotspot \
+  --scenario reward_cluster_hotspot \
+  --clusters 5 \
+  --hotspot-cluster 3 \
+  --cluster-spread-ratio 0.06
+```
+
+Useful override options:
+
+- `--geometry`: `uniform`, `clustered`, `clustered_outliers`, `corridor`, or `ring`
+- `--depot-position`: `random`, `center`, `corner`, `near_cluster`, or `corridor_start`
+- `--reward-pattern`: `uniform`, `near_depot`, `far_from_depot`, or `cluster_hotspot`
+- `--clusters`: number of clusters for clustered geometries
+- `--cluster-spread-ratio`: cluster standard deviation as a fraction of `coordinate_max`
+- `--outlier-fraction`: fraction of non-depot nodes sampled uniformly in `clustered_outliers`
+- `--corridor-width-ratio`: corridor width as a fraction of `coordinate_max`
+- `--ring-radius-ratio`: mean ring radius as a fraction of `coordinate_max`
+- `--ring-noise-ratio`: radial noise as a fraction of `coordinate_max`
+- `--hotspot-cluster`: one-based cluster index receiving higher rewards
 
 Run one generated collection with an explicit travel budget:
 

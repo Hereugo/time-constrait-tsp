@@ -68,6 +68,18 @@ def build_graph(instance: GraphInstance) -> nx.Graph:
     return graph
 
 
+def node_degree(instance: GraphInstance, graph: nx.Graph, node: int) -> int:
+    if instance.is_matrix:
+        return instance.node_count - 1
+    return graph.degree(node)
+
+
+def component_count(instance: GraphInstance, graph: nx.Graph) -> int:
+    if instance.is_matrix:
+        return 1 if instance.node_count else 0
+    return nx.number_connected_components(graph)
+
+
 def scale_values(values: list[int], low: float, high: float) -> list[float]:
     if not values:
         return []
@@ -135,7 +147,9 @@ def analyze_solution(
     solution: SolutionInstance,
     depot: int = 1,
 ) -> SolutionAnalysis:
-    invalid_nodes = tuple(node for node in solution.route if node not in graph.nodes)
+    invalid_nodes = tuple(
+        node for node in solution.route if node < 1 or node > instance.node_count
+    )
 
     route_body = solution.route
     if len(route_body) > 1 and route_body[0] == route_body[-1]:
@@ -157,14 +171,15 @@ def analyze_solution(
     computed_cost = 0
 
     for step_index, (source, target) in enumerate(solution.route_edges, start=1):
-        if not graph.has_edge(source, target):
+        weight = instance.edge_weight(source, target)
+        if weight is None:
             invalid_edges.append((source, target))
             continue
 
         edge_key = normalize_edge(source, target)
         edge_steps.setdefault(edge_key, []).append(step_index)
         edge_visit_counts[edge_key] += 1
-        computed_cost += int(graph.edges[source, target]["weight"])
+        computed_cost += weight
 
     computed_reward = sum(
         instance.reward_by_node.get(node, 0)
@@ -198,12 +213,12 @@ def analyze_solution(
 
 
 def build_solution_step_frame(
-    graph: nx.Graph,
+    instance: GraphInstance,
     solution: SolutionInstance,
 ) -> pd.DataFrame:
     rows = []
     for step_index, (source, target) in enumerate(solution.route_edges, start=1):
-        weight = graph.edges[source, target]["weight"] if graph.has_edge(source, target) else None
+        weight = instance.edge_weight(source, target)
         rows.append(
             {
                 "Step": step_index,
@@ -214,6 +229,125 @@ def build_solution_step_frame(
             }
         )
     return pd.DataFrame(rows)
+
+
+def render_coordinate_graph(
+    instance: GraphInstance,
+    show_reward_labels: bool,
+    show_solution_overlay: bool,
+    solution: SolutionInstance | None,
+    solution_analysis: SolutionAnalysis | None,
+) -> str:
+    coordinates = instance.coordinates or {}
+    rewards = list(instance.reward_by_node.values())
+    reward_min = min(rewards) if rewards else 0
+    reward_max = max(rewards) if rewards else 1
+    node_sizes = scale_values(rewards, 5, 10)
+    node_size_map = {
+        node: size for node, size in zip(instance.reward_by_node, node_sizes)
+    }
+
+    visited_nodes = set()
+    visit_order_by_node: dict[int, int] = {}
+    if show_solution_overlay and solution is not None and solution_analysis is not None:
+        visited_nodes = set(solution_analysis.visited_nodes)
+        visit_order_by_node = solution_analysis.visit_order_by_node
+
+    network = Network(
+        height="760px",
+        width="100%",
+        bgcolor="#f8fafc",
+        font_color="#0f172a",
+        notebook=False,
+        directed=True,
+        cdn_resources="in_line",
+    )
+
+    for node, reward in instance.reward_by_node.items():
+        if node not in coordinates:
+            continue
+
+        x, y = coordinates[node]
+        is_depot = node == 1
+        is_solution_node = node in visited_nodes
+        visit_order = visit_order_by_node.get(node)
+        fill_color = "#f59e0b" if is_depot else interpolate_color(reward, reward_min, reward_max)
+        border_color = "#92400e" if is_depot else "#2563eb" if is_solution_node else "#334155"
+        label = str(node) if show_reward_labels else ""
+        if show_reward_labels:
+            label = f"{node}\nR={reward}"
+        if is_solution_node and visit_order is not None:
+            label = f"{label}\nS{visit_order}" if label else f"S{visit_order}"
+
+        title_parts = [
+            f"<strong>Node {node}</strong>",
+            f"Reward: {reward}",
+            f"Coordinates: ({x:.3f}, {y:.3f})",
+        ]
+        if is_depot:
+            title_parts.append("Depot")
+        if is_solution_node and visit_order is not None:
+            title_parts.append(f"Visited in solution: position {visit_order}")
+
+        network.add_node(
+            node,
+            x=x,
+            y=-y,
+            physics=False,
+            label=label,
+            title="<br>".join(title_parts),
+            shape="star" if is_depot else "dot",
+            size=node_size_map[node] + (3 if is_solution_node else 0),
+            borderWidth=4 if is_depot else 3 if is_solution_node else 1,
+            color={
+                "background": fill_color,
+                "border": border_color,
+                "highlight": {"background": fill_color, "border": border_color},
+                "hover": {"background": fill_color, "border": border_color},
+            },
+        )
+
+    if show_solution_overlay and solution is not None:
+        for step_index, (source, target) in enumerate(solution.route_edges, start=1):
+            if source not in coordinates or target not in coordinates:
+                continue
+            weight = instance.edge_weight(source, target)
+            title_parts = [f"Solution step {step_index}: {source} - {target}"]
+            if weight is not None:
+                title_parts.append(f"Weight: {weight}")
+            network.add_edge(
+                source,
+                target,
+                label=str(step_index) if show_reward_labels else "",
+                title="<br>".join(title_parts),
+                width=3,
+                color={"color": "#dc2626", "highlight": "#991b1b", "hover": "#991b1b"},
+                arrows="to",
+                smooth=False,
+            )
+
+    options = {
+        "interaction": {
+            "dragNodes": False,
+            "dragView": True,
+            "hover": True,
+            "keyboard": True,
+            "navigationButtons": True,
+            "tooltipDelay": 100,
+            "zoomView": True,
+        },
+        "nodes": {
+            "font": {"face": "Arial", "size": 13, "multi": True},
+            "shadow": {"enabled": True, "color": "rgba(15, 23, 42, 0.10)", "size": 6},
+        },
+        "edges": {
+            "font": {"align": "top", "size": 11, "strokeWidth": 5, "strokeColor": "#f8fafc"},
+            "smooth": False,
+        },
+        "physics": {"enabled": False},
+    }
+    network.set_options(json.dumps(options))
+    return network.generate_html()
 
 
 def render_interactive_graph(
@@ -508,6 +642,8 @@ with st.sidebar:
         collections[collection_name],
         format_func=lambda path_str: Path(path_str).name,
     )
+    selected_instance = load_instance(graph_path)
+    use_coordinate_view = selected_instance.is_matrix and selected_instance.has_coordinates
     available_result_directories = result_directory_options_for_collection(collection_name)
     result_directory_options = [no_result_directory_label, *available_result_directories]
     selected_result_directory_option = st.selectbox(
@@ -528,55 +664,72 @@ with st.sidebar:
         disabled=selected_result_directory_name is None or solution is None,
         help="Highlights the stored tour from the selected result directory.",
     )
-    physics_solver = st.selectbox(
-        "Physics solver",
-        list(solver_labels),
-        format_func=lambda solver: solver_labels[solver],
-        help="All of these keep the graph interactive, but they spread the nodes differently.",
-    )
-    repulsion_strength = st.slider(
-        "Repulsion strength",
-        min_value=300,
-        max_value=6000,
-        value=1600,
-        step=100,
-        help="Higher values push nodes farther apart.",
-    )
-    spring_length = st.slider(
-        "Spring length",
-        min_value=40,
-        max_value=260,
-        value=120,
-        step=10,
-        help="Preferred resting length of the edge springs.",
-    )
-    spring_stiffness = st.slider(
-        "Spring stiffness",
-        min_value=0.001,
-        max_value=0.12,
-        value=0.04,
-        step=0.001,
-        format="%.3f",
-        help="Higher values make edges pull harder.",
-    )
-    damping = st.slider(
-        "Damping",
-        min_value=0.05,
-        max_value=0.9,
-        value=0.35,
-        step=0.05,
-        help="Higher values calm the motion faster.",
-    )
-    node_spacing = st.slider(
-        "Node spacing",
-        min_value=80,
-        max_value=400,
-        value=180,
-        step=10,
-        help="Used most strongly by the repulsion solver.",
-    )
-    show_edge_weights = st.toggle("Show edge weights", value=True)
-    show_reward_labels = st.toggle("Show reward labels", value=True)
+    if use_coordinate_view:
+        st.caption(
+            "This complete graph is rendered as coordinate points; only the selected solution tour is drawn."
+        )
+        show_edge_weights = False
+        show_reward_labels = st.toggle(
+            "Show node/reward labels",
+            value=selected_instance.node_count <= 100,
+            help="Labels are useful for small and medium instances, but noisy for large instances.",
+        )
+        physics_solver = "forceAtlas2Based"
+        repulsion_strength = 1600
+        spring_length = 120
+        spring_stiffness = 0.04
+        damping = 0.35
+        node_spacing = 180
+    else:
+        physics_solver = st.selectbox(
+            "Physics solver",
+            list(solver_labels),
+            format_func=lambda solver: solver_labels[solver],
+            help="All of these keep the graph interactive, but they spread the nodes differently.",
+        )
+        repulsion_strength = st.slider(
+            "Repulsion strength",
+            min_value=300,
+            max_value=6000,
+            value=1600,
+            step=100,
+            help="Higher values push nodes farther apart.",
+        )
+        spring_length = st.slider(
+            "Spring length",
+            min_value=40,
+            max_value=260,
+            value=120,
+            step=10,
+            help="Preferred resting length of the edge springs.",
+        )
+        spring_stiffness = st.slider(
+            "Spring stiffness",
+            min_value=0.001,
+            max_value=0.12,
+            value=0.04,
+            step=0.001,
+            format="%.3f",
+            help="Higher values make edges pull harder.",
+        )
+        damping = st.slider(
+            "Damping",
+            min_value=0.05,
+            max_value=0.9,
+            value=0.35,
+            step=0.05,
+            help="Higher values calm the motion faster.",
+        )
+        node_spacing = st.slider(
+            "Node spacing",
+            min_value=80,
+            max_value=400,
+            value=180,
+            step=10,
+            help="Used most strongly by the repulsion solver.",
+        )
+        show_edge_weights = st.toggle("Show edge weights", value=True)
+        show_reward_labels = st.toggle("Show reward labels", value=True)
     st.markdown("---")
     st.write("Current dataset file")
     st.code(Path(graph_path).relative_to(datasets_root().parent).as_posix(), language="text")
@@ -594,33 +747,43 @@ with st.sidebar:
         if solution is None:
             st.caption("This result directory does not contain a matching file for the selected graph.")
 
-instance = load_instance(graph_path)
+instance = selected_instance
 base_graph = build_graph(instance)
 solution_analysis = (
     analyze_solution(instance, base_graph, solution) if solution is not None else None
 )
 
-graph_html, graph = render_interactive_graph(
-    instance,
-    show_edge_weights=show_edge_weights,
-    show_reward_labels=show_reward_labels,
-    physics_solver=physics_solver,
-    repulsion_strength=repulsion_strength,
-    spring_length=spring_length,
-    spring_stiffness=spring_stiffness,
-    damping=damping,
-    node_spacing=node_spacing,
-    show_solution_overlay=show_solution_overlay,
-    solution=solution,
-    solution_analysis=solution_analysis,
-)
+if use_coordinate_view:
+    graph = base_graph
+    graph_html = render_coordinate_graph(
+        instance,
+        show_reward_labels=show_reward_labels,
+        show_solution_overlay=show_solution_overlay,
+        solution=solution,
+        solution_analysis=solution_analysis,
+    )
+else:
+    graph_html, graph = render_interactive_graph(
+        instance,
+        show_edge_weights=show_edge_weights,
+        show_reward_labels=show_reward_labels,
+        physics_solver=physics_solver,
+        repulsion_strength=repulsion_strength,
+        spring_length=spring_length,
+        spring_stiffness=spring_stiffness,
+        damping=damping,
+        node_spacing=node_spacing,
+        show_solution_overlay=show_solution_overlay,
+        solution=solution,
+        solution_analysis=solution_analysis,
+    )
 
-components_count = nx.number_connected_components(graph)
+components_count = component_count(instance, graph)
 reward_df = pd.DataFrame(
     {
         "Node": list(instance.reward_by_node.keys()),
         "Reward": list(instance.reward_by_node.values()),
-        "Degree": [graph.degree(node) for node in instance.reward_by_node],
+        "Degree": [node_degree(instance, graph, node) for node in instance.reward_by_node],
         "Visited": [
             solution_analysis is not None and node in solution_analysis.visited_nodes
             for node in instance.reward_by_node
@@ -631,31 +794,45 @@ reward_df = pd.DataFrame(
         ],
     }
 )
-edge_df = pd.DataFrame(
-    {
-        "Source": [edge.source for edge in instance.edges],
-        "Target": [edge.target for edge in instance.edges],
-        "Weight": [edge.weight for edge in instance.edges],
-        "On route": [
-            solution_analysis is not None
-            and normalize_edge(edge.source, edge.target) in solution_analysis.edge_steps_by_key
-            for edge in instance.edges
-        ],
-        "Route steps": [
-            ", ".join(
-                str(step)
-                for step in solution_analysis.edge_steps_by_key.get(
-                    normalize_edge(edge.source, edge.target), ()
+if instance.is_matrix:
+    route_edges = solution.route_edges if solution is not None else ()
+    edge_df = pd.DataFrame(
+        {
+            "Source": [source for source, _ in route_edges],
+            "Target": [target for _, target in route_edges],
+            "Weight": [
+                instance.edge_weight(source, target) for source, target in route_edges
+            ],
+            "On route": [True for _ in route_edges],
+            "Route steps": [str(step) for step, _ in enumerate(route_edges, start=1)],
+        }
+    )
+else:
+    edge_df = pd.DataFrame(
+        {
+            "Source": [edge.source for edge in instance.edges],
+            "Target": [edge.target for edge in instance.edges],
+            "Weight": [edge.weight for edge in instance.edges],
+            "On route": [
+                solution_analysis is not None
+                and normalize_edge(edge.source, edge.target) in solution_analysis.edge_steps_by_key
+                for edge in instance.edges
+            ],
+            "Route steps": [
+                ", ".join(
+                    str(step)
+                    for step in solution_analysis.edge_steps_by_key.get(
+                        normalize_edge(edge.source, edge.target), ()
+                    )
                 )
-            )
-            if solution_analysis is not None
-            else ""
-            for edge in instance.edges
-        ],
-    }
-)
+                if solution_analysis is not None
+                else ""
+                for edge in instance.edges
+            ],
+        }
+    )
 solution_step_df = (
-    build_solution_step_frame(graph, solution) if solution is not None else pd.DataFrame()
+    build_solution_step_frame(instance, solution) if solution is not None else pd.DataFrame()
 )
 
 metric_columns = st.columns(5)
@@ -678,16 +855,28 @@ if solution is not None:
 left_column, right_column = st.columns([1.8, 1.0])
 
 with left_column:
-    st.subheader("Interactive graph")
-    if show_solution_overlay and solution is not None:
-        st.caption(
-            "Drag nodes, zoom with the mouse wheel, and hover for details. Red edges and blue-bordered nodes show the stored tour."
-        )
+    if use_coordinate_view:
+        st.subheader("Coordinate view")
+        if show_solution_overlay and solution is not None:
+            st.caption(
+                "The complete graph is implied by the Euclidean matrix. Red line segments show the stored depot-return tour; all other complete-graph edges are hidden."
+            )
+        else:
+            st.caption(
+                "The complete graph is implied by the Euclidean matrix. Points show node coordinates and rewards; complete-graph edges are hidden."
+            )
+        components.html(graph_html, height=780, scrolling=False)
     else:
-        st.caption(
-            "Drag nodes, zoom with the mouse wheel, and hover any node or edge to inspect rewards and weights."
-        )
-    components.html(graph_html, height=780, scrolling=False)
+        st.subheader("Interactive graph")
+        if show_solution_overlay and solution is not None:
+            st.caption(
+                "Drag nodes, zoom with the mouse wheel, and hover for details. Red edges and blue-bordered nodes show the stored tour."
+            )
+        else:
+            st.caption(
+                "Drag nodes, zoom with the mouse wheel, and hover any node or edge to inspect rewards and weights."
+            )
+        components.html(graph_html, height=780, scrolling=False)
     st.caption("Node 1 stays outlined in orange because the problem statement uses it as the tour's start/end point.")
 
 with right_column:
@@ -741,6 +930,10 @@ with right_column:
                 st.success("Stored solution validated against the selected graph.")
 
         st.code(" -> ".join(str(node) for node in solution.route), language="text")
+        if not solution.route_edges:
+            st.info(
+                "This solution only contains the depot, so there are no tour edges to draw on the graph."
+            )
 
     st.subheader("Reward profile")
     st.bar_chart(reward_df.set_index("Node")[["Reward"]], width="stretch")
@@ -779,6 +972,10 @@ with tabs[0]:
 
 with tabs[1]:
     st.subheader("Weighted edges")
+    if instance.is_matrix:
+        st.caption(
+            "This complete graph has too many implied edges to list here. The table shows only stored tour steps when a result directory is selected."
+        )
     st.dataframe(
         edge_df.sort_values(
             ["On route", "Route steps", "Weight", "Source", "Target"],
@@ -804,7 +1001,13 @@ with tabs[2]:
 
 with tabs[3]:
     st.subheader("Raw graph file")
-    st.code(Path(graph_path).read_text(encoding="utf-8"), language="text")
+    raw_graph_text = Path(graph_path).read_text(encoding="utf-8")
+    if instance.is_matrix and len(raw_graph_text) > 30_000:
+        st.caption(
+            "Large matrix files are truncated in this view to keep the app responsive. Open the dataset file directly for the full matrix."
+        )
+        raw_graph_text = raw_graph_text[:30_000] + "\n... truncated ...\n"
+    st.code(raw_graph_text, language="text")
 
 with tabs[4]:
     st.subheader("Raw solution file")

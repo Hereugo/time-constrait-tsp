@@ -80,13 +80,14 @@ The current generated collections use Rudy planar graphs with density `40`, rand
 
 These commands create 100 instances per size class. The generated dataset files can be committed so GitHub Actions runners have the same benchmark inputs as local runs.
 
-Synthetic Euclidean complete-graph matrix instances are generated with `generators/generate_euclidean_matrix.py`. Each instance samples coordinates, assigns reward `0` to depot node `1`, assigns seeded integer rewards to non-depot nodes, and writes rounded Euclidean distances as an `n x n` matrix.
+Synthetic Euclidean complete-graph matrix instances are generated with `generators/generate_euclidean_matrix.py`. Each instance samples coordinates, assigns reward `0` to depot node `1`, assigns seeded integer rewards to non-depot nodes, and writes rounded Euclidean distances as an `n x n` matrix. Use `--scenario` to generate explainable Euclidean setups such as centered depots, corner depots, clustered coordinates, outliers, corridors, rings, and reward patterns tied to depot distance or cluster membership.
 
 ```sh
 python3 generators/generate_euclidean_matrix.py \
   --samples 100 \
   --nodes 50 \
   --output-dir datasets/euclidean_complete_small \
+  --scenario uniform_center_depot \
   --seed-base 1000 \
   --coordinate-max 1000 \
   --reward-min 1 \

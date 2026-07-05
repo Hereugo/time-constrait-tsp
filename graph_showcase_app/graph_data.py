@@ -20,6 +20,17 @@ class GraphInstance:
     edge_count: int
     rewards: tuple[int, ...]
     edges: tuple[Edge, ...]
+    format: str = "edge_list"
+    coordinates: dict[int, tuple[float, float]] | None = None
+    weight_matrix: tuple[tuple[int, ...], ...] | None = None
+
+    @property
+    def is_matrix(self) -> bool:
+        return self.format == "matrix"
+
+    @property
+    def has_coordinates(self) -> bool:
+        return bool(self.coordinates)
 
     @property
     def reward_by_node(self) -> dict[int, int]:
@@ -43,13 +54,46 @@ class GraphInstance:
 
     @property
     def total_edge_weight(self) -> int:
+        if self.weight_matrix is not None:
+            return sum(
+                self.weight_matrix[source][target]
+                for source in range(self.node_count)
+                for target in range(source + 1, self.node_count)
+            )
         return sum(edge.weight for edge in self.edges)
 
     @property
     def average_edge_weight(self) -> float:
-        if not self.edges:
+        if self.edge_count == 0:
             return 0.0
         return self.total_edge_weight / self.edge_count
+
+    def has_edge(self, source: int, target: int) -> bool:
+        if self.weight_matrix is not None:
+            return (
+                source != target
+                and 1 <= source <= self.node_count
+                and 1 <= target <= self.node_count
+            )
+
+        return any(
+            (edge.source == source and edge.target == target)
+            or (edge.source == target and edge.target == source)
+            for edge in self.edges
+        )
+
+    def edge_weight(self, source: int, target: int) -> int | None:
+        if self.weight_matrix is not None:
+            if not self.has_edge(source, target):
+                return None
+            return self.weight_matrix[source - 1][target - 1]
+
+        for edge in self.edges:
+            if (edge.source == source and edge.target == target) or (
+                edge.source == target and edge.target == source
+            ):
+                return edge.weight
+        return None
 
 
 @dataclass(frozen=True)
@@ -93,6 +137,27 @@ def results_root() -> Path:
     return repo_root() / "results"
 
 
+def is_supported_graph_file(path: Path) -> bool:
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line == "TTSP_MATRIX":
+            return True
+
+        parts = line.split()
+        if len(parts) != 2:
+            return False
+        try:
+            int(parts[0])
+            int(parts[1])
+        except ValueError:
+            return False
+        return True
+
+    return False
+
+
 def list_dataset_collections() -> dict[str, list[Path]]:
     collections: dict[str, list[Path]] = {}
     base_dir = datasets_root()
@@ -100,15 +165,25 @@ def list_dataset_collections() -> dict[str, list[Path]]:
     if not base_dir.exists():
         return collections
 
-    for collection_dir in sorted(base_dir.iterdir()):
+    for collection_dir in sorted(
+        path for path in base_dir.rglob("*") if path.is_dir()
+    ):
         if not collection_dir.is_dir():
             continue
 
-        graph_files = sorted(collection_dir.glob("*.txt"))
+        graph_files = sorted(
+            path
+            for path in collection_dir.glob("*.txt")
+            if is_supported_graph_file(path)
+        )
         if graph_files:
-            collections[collection_dir.name] = graph_files
+            collections[collection_dir.relative_to(base_dir).as_posix()] = graph_files
 
     return collections
+
+
+def dataset_collection_name(path: Path) -> str:
+    return path.parent.relative_to(datasets_root()).as_posix()
 
 
 def list_result_directories() -> dict[str, list[Path]]:
@@ -131,21 +206,86 @@ def list_result_directories() -> dict[str, list[Path]]:
 
 def list_result_directories_for_collection(collection_name: str) -> dict[str, list[Path]]:
     matching_directories: dict[str, list[Path]] = {}
+    normalized_collection_name = collection_name.replace("/", "_")
     for directory_name, result_files in list_result_directories().items():
-        if directory_name == collection_name or directory_name.startswith(f"{collection_name}_"):
+        if (
+            directory_name in {collection_name, normalized_collection_name}
+            or directory_name.startswith(f"{normalized_collection_name}_")
+        ):
             matching_directories[directory_name] = result_files
     return matching_directories
 
 
 def load_graph_instance(path: Path) -> GraphInstance:
+    raw_lines = path.read_text(encoding="utf-8").splitlines()
+    coordinates: dict[int, tuple[float, float]] = {}
+    for raw_line in raw_lines:
+        stripped = raw_line.strip()
+        if not stripped.startswith("# coord "):
+            continue
+
+        parts = stripped.split()
+        if len(parts) != 5:
+            continue
+        try:
+            node = int(parts[2])
+            x = float(parts[3])
+            y = float(parts[4])
+        except ValueError:
+            continue
+        coordinates[node] = (x, y)
+
     lines = [
         line.strip()
-        for line in path.read_text(encoding="utf-8").splitlines()
+        for line in raw_lines
         if line.strip() and not line.lstrip().startswith("#")
     ]
 
     if len(lines) < 2:
         raise ValueError(f"{path} does not contain enough data for a graph instance.")
+
+    if lines[0] == "TTSP_MATRIX":
+        if len(lines) < 4:
+            raise ValueError(f"{path} does not contain enough matrix rows.")
+
+        try:
+            node_count = int(lines[1])
+        except ValueError as exc:
+            raise ValueError(f"Invalid matrix node count in {path}: {lines[1]!r}") from exc
+
+        rewards = tuple(int(value) for value in lines[2].split())
+        if len(rewards) != node_count:
+            raise ValueError(
+                f"{path} declares {node_count} nodes but contains {len(rewards)} rewards."
+            )
+
+        matrix_lines = lines[3:]
+        if len(matrix_lines) != node_count:
+            raise ValueError(
+                f"{path} declares {node_count} nodes but contains {len(matrix_lines)} matrix rows."
+            )
+
+        matrix: list[tuple[int, ...]] = []
+        for row_index, row in enumerate(matrix_lines, start=1):
+            weights = tuple(int(value) for value in row.split())
+            if len(weights) != node_count:
+                raise ValueError(
+                    f"Matrix row {row_index} in {path} contains {len(weights)} weights, expected {node_count}."
+                )
+            matrix.append(weights)
+
+        return GraphInstance(
+            path=path,
+            collection=dataset_collection_name(path),
+            name=path.name,
+            node_count=node_count,
+            edge_count=(node_count * (node_count - 1)) // 2,
+            rewards=rewards,
+            edges=(),
+            format="matrix",
+            coordinates=coordinates or None,
+            weight_matrix=tuple(matrix),
+        )
 
     try:
         node_count, edge_count = map(int, lines[0].split())
@@ -175,12 +315,13 @@ def load_graph_instance(path: Path) -> GraphInstance:
 
     return GraphInstance(
         path=path,
-        collection=path.parent.name,
+        collection=dataset_collection_name(path),
         name=path.name,
         node_count=node_count,
         edge_count=edge_count,
         rewards=rewards,
         edges=tuple(edges),
+        coordinates=coordinates or None,
     )
 
 

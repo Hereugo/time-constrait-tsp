@@ -7,6 +7,10 @@ on:
         description: "Comma-separated instance size classes: small,medium,large"
         required: true
         default: "small,medium,large"
+      collections:
+        description: "Optional comma-separated dataset collections under datasets/, for example euclidean_scenarios/ring"
+        required: false
+        default: ""
       budgets:
         description: "Comma-separated travel budgets"
         required: true
@@ -49,20 +53,36 @@ jobs:
           script: |
             const split = (value) => value.split(',').map((item) => item.trim()).filter(Boolean);
             const sizes = split('${{ inputs.sizes }}');
+            const requestedCollections = split('${{ inputs.collections }}');
             const budgets = split('${{ inputs.budgets }}');
             const seeds = split('${{ inputs.seeds }}');
-            const allowedSizes = new Set(['small', 'medium', 'large']);
-            for (const size of sizes) {
-              if (!allowedSizes.has(size)) {
-                core.setFailed(`Unsupported size: ${size}`);
-                return;
+
+            let collections = [];
+            if (requestedCollections.length) {
+              for (const collection of requestedCollections) {
+                if (collection.startsWith('/') || collection.includes('..')) {
+                  core.setFailed(`Unsupported collection path: ${collection}`);
+                  return;
+                }
+                collections.push({ collection, collection_label: collection.replaceAll('/', '_') });
+              }
+            } else {
+              const allowedSizes = new Set(['small', 'medium', 'large']);
+              for (const size of sizes) {
+                if (!allowedSizes.has(size)) {
+                  core.setFailed(`Unsupported size: ${size}`);
+                  return;
+                }
+                const collection = `euclidean_complete_${size}`;
+                collections.push({ collection, collection_label: collection });
               }
             }
+
             const include = [];
-            for (const size of sizes) {
+            for (const collection of collections) {
               for (const budget of budgets) {
                 for (const seed of seeds) {
-                  include.push({ size, budget, seed });
+                  include.push({ ...collection, budget, seed });
                 }
               }
             }
@@ -87,7 +107,8 @@ jobs:
 
       - name: Run GA batch
         env:
-          SIZE: ${{ matrix.size }}
+          COLLECTION: ${{ matrix.collection }}
+          COLLECTION_LABEL: ${{ matrix.collection_label }}
           BUDGET: ${{ matrix.budget }}
           SEED: ${{ matrix.seed }}
           GENERATIONS: ${{ inputs.generations }}
@@ -97,11 +118,10 @@ jobs:
           INSTANCE_OFFSET: ${{ inputs.instance_offset }}
         run: |
           set -euo pipefail
-          COLLECTION="euclidean_complete_${SIZE}"
           SOURCE_DIR="datasets/${COLLECTION}"
           INPUT_DIR="${SOURCE_DIR}"
           if [[ "${MAX_INSTANCES}" != "0" ]]; then
-            SUBSET_DIR="${RUNNER_TEMP}/${COLLECTION}_offset${INSTANCE_OFFSET}_max${MAX_INSTANCES}"
+            SUBSET_DIR="${RUNNER_TEMP}/${COLLECTION_LABEL}_offset${INSTANCE_OFFSET}_max${MAX_INSTANCES}"
             mkdir -p "${SUBSET_DIR}"
             SOURCE_DIR="${SOURCE_DIR}" SUBSET_DIR="${SUBSET_DIR}" MAX_INSTANCES="${MAX_INSTANCES}" INSTANCE_OFFSET="${INSTANCE_OFFSET}" python3 - <<'PY'
           import os
@@ -129,7 +149,7 @@ jobs:
           fi
           BUDGET_PADDED=$(printf "%03d" "${BUDGET}")
           MUTATION_LABEL=${MUTATION_RATE/./p}
-          RUN_DIR="${COLLECTION}_ga_budget${BUDGET_PADDED}_seed$(printf "%03d" "${SEED}")_g${GENERATIONS}_p${POPULATION_SIZE}_m${MUTATION_LABEL}"
+          RUN_DIR="${COLLECTION_LABEL}_ga_budget${BUDGET_PADDED}_seed$(printf "%03d" "${SEED}")_g${GENERATIONS}_p${POPULATION_SIZE}_m${MUTATION_LABEL}"
           python3 approaches/genetic/index.py \
             --input "${INPUT_DIR}" \
             --output "results/${RUN_DIR}" \
@@ -143,7 +163,7 @@ jobs:
       - name: Upload result artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ga-${{ matrix.size }}-b${{ matrix.budget }}-seed${{ matrix.seed }}-offset${{ inputs.instance_offset }}-max${{ inputs.max_instances }}
+          name: ga-${{ matrix.collection_label }}-b${{ matrix.budget }}-seed${{ matrix.seed }}-offset${{ inputs.instance_offset }}-max${{ inputs.max_instances }}
           path: |
             results/
             results_metadata/genetic/
