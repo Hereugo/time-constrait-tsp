@@ -11,10 +11,14 @@ on:
         description: "Optional comma-separated dataset collections under datasets/, for example euclidean_scenarios/ring"
         required: false
         default: ""
+      scenario_presets:
+        description: "Comma-separated presets under datasets/euclidean_scenarios, or all for the 11 five-instance presets"
+        required: false
+        default: "all"
       budgets:
         description: "Comma-separated travel budgets"
         required: true
-        default: "50,100,200,300"
+        default: "2500,7500"
       max_instances:
         description: "Maximum number of instances per job; use 0 for all"
         required: true
@@ -38,7 +42,21 @@ jobs:
             const split = (value) => value.split(',').map((item) => item.trim()).filter(Boolean);
             const sizes = split('${{ inputs.sizes }}');
             const requestedCollections = split('${{ inputs.collections }}');
+            const requestedScenarioPresets = split('${{ inputs.scenario_presets }}');
             const budgets = split('${{ inputs.budgets }}');
+            const scenarioPresets = [
+              'clustered_center_depot',
+              'clustered_offset_depot',
+              'clustered_outliers',
+              'corridor',
+              'reward_cluster_hotspot',
+              'reward_far_from_depot',
+              'reward_near_depot',
+              'ring',
+              'uniform_center_depot',
+              'uniform_corner_depot',
+              'uniform_random_depot',
+            ];
 
             let collections = [];
             if (requestedCollections.length) {
@@ -47,6 +65,19 @@ jobs:
                   core.setFailed(`Unsupported collection path: ${collection}`);
                   return;
                 }
+                collections.push({ collection, collection_label: collection.replaceAll('/', '_') });
+              }
+            } else if (requestedScenarioPresets.length) {
+              const selectedPresets = requestedScenarioPresets.includes('all')
+                ? scenarioPresets
+                : requestedScenarioPresets;
+              const allowedPresets = new Set(scenarioPresets);
+              for (const preset of selectedPresets) {
+                if (!allowedPresets.has(preset)) {
+                  core.setFailed(`Unsupported scenario preset: ${preset}`);
+                  return;
+                }
+                const collection = `euclidean_scenarios/${preset}`;
                 collections.push({ collection, collection_label: collection.replaceAll('/', '_') });
               }
             } else {
@@ -72,7 +103,7 @@ jobs:
   run-greedy:
     needs: plan
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       max-parallel: 3
